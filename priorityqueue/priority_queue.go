@@ -1,5 +1,5 @@
-// Package heap provides an implementation of heap data structure in Go.
-package heap
+// Package heap provides an implementation of priority queue structure in Go.
+package priorityqueue
 
 import (
 	"container/heap"
@@ -8,16 +8,14 @@ import (
 // Less is a function that returns whether x < y or not.
 type Less[T any] func(x, y T) bool
 
-// Heap represents a heap.
-type Heap[T comparable] struct {
-	container  heapContainer[T]
-	nodeLookUp map[T]*heapNode[T]
+// PriorityQueue represents a priority queue.
+type PriorityQueue[T comparable] struct {
+	container heapContainer[T]
 }
 
 // New creates a new heap of T.
-func New[T comparable](less Less[T]) *Heap[T] {
-	return &Heap[T]{
-		nodeLookUp: map[T]*heapNode[T]{},
+func New[T comparable](less Less[T]) *PriorityQueue[T] {
+	return &PriorityQueue[T]{
 		container: heapContainer[T]{
 			less: less,
 		},
@@ -25,34 +23,26 @@ func New[T comparable](less Less[T]) *Heap[T] {
 }
 
 // Push pushes a value into the queue.
-func (h *Heap[T]) Push(value T) {
+func (h *PriorityQueue[T]) Push(value T) {
 	newNode := &heapNode[T]{
 		value: value,
 	}
-	h.nodeLookUp[value] = newNode
 	heap.Push(&h.container, newNode)
 }
 
 // Pop pops a value from the queue.
-func (h *Heap[T]) Pop() T {
+func (h *PriorityQueue[T]) Pop() T {
 	val := heap.Pop(&h.container).(*heapNode[T]).value
-	delete(h.nodeLookUp, val)
 	return val
 }
 
 // Top returns the value at the top of the queue.
-func (h *Heap[T]) Top() T {
+func (h *PriorityQueue[T]) Top() T {
 	return h.container.nodes[0].value
 }
 
-// Fix fixes the position of value in the heap data structure.
-// It should be called after its data changes.
-func (h *Heap[T]) Fix(value T) {
-	heap.Fix(&h.container, h.nodeLookUp[value].index)
-}
-
 // Size returns the size of the queue.
-func (h *Heap[T]) Size() int {
+func (h *PriorityQueue[T]) Size() int {
 	return len(h.container.nodes)
 }
 
