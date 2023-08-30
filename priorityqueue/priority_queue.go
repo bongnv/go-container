@@ -42,7 +42,7 @@ func (h *PriorityQueue[T]) Top() T {
 }
 
 // Size returns the size of the queue.
-func (h *PriorityQueue[T]) Size() int {
+func (h *PriorityQueue[T]) Len() int {
 	return len(h.container.nodes)
 }
 

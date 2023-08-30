@@ -23,8 +23,8 @@ func TestQueue(t *testing.T) {
 			t.Fatalf("expected 3 but got %v", h.Back())
 		}
 
-		if h.Size() != 2 {
-			t.Fatalf("expected 2 but got %v", h.Size())
+		if h.Len() != 2 {
+			t.Fatalf("expected 2 but got %v", h.Len())
 		}
 
 		if h.Front() != 2 {

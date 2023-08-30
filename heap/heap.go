@@ -52,7 +52,7 @@ func (h *Heap[T]) Fix(value T) {
 }
 
 // Size returns the size of the queue.
-func (h *Heap[T]) Size() int {
+func (h *Heap[T]) Len() int {
 	return len(h.container.nodes)
 }
 

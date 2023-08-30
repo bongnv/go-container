@@ -26,8 +26,8 @@ func TestPriorityQueue(t *testing.T) {
 			t.Fatalf("expected 2 but got %v", h.Top())
 		}
 
-		if h.Size() != 2 {
-			t.Fatalf("expected 2 but got %v", h.Size())
+		if h.Len() != 2 {
+			t.Fatalf("expected 2 but got %v", h.Len())
 		}
 	})
 
@@ -49,8 +49,8 @@ func TestPriorityQueue(t *testing.T) {
 			t.Fatalf("expected 2 but got %v", h.Top())
 		}
 
-		if h.Size() != 2 {
-			t.Fatalf("expected 2 but got %v", h.Size())
+		if h.Len() != 2 {
+			t.Fatalf("expected 2 but got %v", h.Len())
 		}
 	})
 
@@ -73,8 +73,8 @@ func TestPriorityQueue(t *testing.T) {
 			t.Fatalf("expected 1 but got %v", h.Top())
 		}
 
-		if h.Size() != 3 {
-			t.Fatalf("expected 3 but got %v", h.Size())
+		if h.Len() != 3 {
+			t.Fatalf("expected 3 but got %v", h.Len())
 		}
 	})
 

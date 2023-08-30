@@ -16,7 +16,7 @@ type Queue[T any] struct {
 }
 
 // Size returns the size of the queue.
-func (s Queue[T]) Size() int {
+func (s Queue[T]) Len() int {
 	return s.container.Len()
 }
 

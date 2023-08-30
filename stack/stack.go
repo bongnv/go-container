@@ -16,7 +16,7 @@ type Stack[T any] struct {
 }
 
 // Size returns the size of the stack.
-func (s Stack[T]) Size() int {
+func (s Stack[T]) Len() int {
 	return s.container.Len()
 }
 

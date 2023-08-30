@@ -59,7 +59,7 @@ func New[T any]() *List[T] { return new(List[T]).Init() }
 
 // Size returns the number of elements of list l.
 // The complexity is O(1).
-func (l *List[T]) Size() int { return l.len }
+func (l *List[T]) Len() int { return l.len }
 
 // Front returns the first element of list l or nil if the list is empty.
 func (l *List[T]) Front() *Element[T] {
@@ -216,7 +216,7 @@ func (l *List[T]) MoveAfter(e, mark *Element[T]) {
 // The lists l and other may be the same. They must not be nil.
 func (l *List[T]) PushBackList(other *List[T]) {
 	l.lazyInit()
-	for i, e := other.Size(), other.Front(); i > 0; i, e = i-1, e.Next() {
+	for i, e := other.Len(), other.Front(); i > 0; i, e = i-1, e.Next() {
 		l.insertValue(e.Value, l.root.prev)
 	}
 }
@@ -225,7 +225,7 @@ func (l *List[T]) PushBackList(other *List[T]) {
 // The lists l and other may be the same. They must not be nil.
 func (l *List[T]) PushFrontList(other *List[T]) {
 	l.lazyInit()
-	for i, e := other.Size(), other.Back(); i > 0; i, e = i-1, e.Prev() {
+	for i, e := other.Len(), other.Back(); i > 0; i, e = i-1, e.Prev() {
 		l.insertValue(e.Value, &l.root)
 	}
 }

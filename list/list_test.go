@@ -21,8 +21,8 @@ func TestList(t *testing.T) {
 }
 
 func expectList(t *testing.T, l *list.List[string], elements ...string) {
-	if l.Size() != len(elements) {
-		t.Errorf("Expected size %v but got %v", len(elements), l.Size())
+	if l.Len() != len(elements) {
+		t.Errorf("Expected size %v but got %v", len(elements), l.Len())
 		return
 	}
 
