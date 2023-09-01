@@ -3,10 +3,9 @@ package heap
 
 import (
 	"container/heap"
-)
 
-// Less is a function that returns whether x < y or not.
-type Less[T any] func(x, y T) bool
+	"github.com/bongnv/go-container/algorithm"
+)
 
 // Heap represents a heap.
 type Heap[T comparable] struct {
@@ -15,7 +14,7 @@ type Heap[T comparable] struct {
 }
 
 // New creates a new heap of T.
-func New[T comparable](less Less[T]) *Heap[T] {
+func New[T comparable](less algorithm.LessFunc[T]) *Heap[T] {
 	return &Heap[T]{
 		nodeLookUp: map[T]*heapNode[T]{},
 		container: heapContainer[T]{
@@ -63,7 +62,7 @@ type heapNode[T any] struct {
 
 type heapContainer[T any] struct {
 	nodes []*heapNode[T]
-	less  Less[T]
+	less  algorithm.LessFunc[T]
 }
 
 func (hc heapContainer[T]) Len() int {

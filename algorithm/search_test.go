@@ -7,7 +7,7 @@ import (
 	gocmp "github.com/google/go-cmp/cmp"
 )
 
-func TestSearchOrdered(t *testing.T) {
+func TestSearch(t *testing.T) {
 	testCases := map[string]struct {
 		input    []int
 		expected int
@@ -38,7 +38,7 @@ func TestSearchOrdered(t *testing.T) {
 	for name, tc := range testCases {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
-			index := algorithm.SearchOrdered(tc.input, tc.target)
+			index := algorithm.Search(tc.input, tc.target)
 			if diff := gocmp.Diff(tc.expected, index); diff != "" {
 				t.Fatalf("wrong index is returned: %s", diff)
 			}

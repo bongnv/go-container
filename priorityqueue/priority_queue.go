@@ -3,10 +3,9 @@ package priorityqueue
 
 import (
 	"container/heap"
-)
 
-// Less is a function that returns whether x < y or not.
-type Less[T any] func(x, y T) bool
+	"github.com/bongnv/go-container/algorithm"
+)
 
 // PriorityQueue represents a priority queue.
 type PriorityQueue[T comparable] struct {
@@ -14,7 +13,7 @@ type PriorityQueue[T comparable] struct {
 }
 
 // New creates a new heap of T.
-func New[T comparable](less Less[T]) *PriorityQueue[T] {
+func New[T comparable](less algorithm.LessFunc[T]) *PriorityQueue[T] {
 	return &PriorityQueue[T]{
 		container: heapContainer[T]{
 			less: less,
@@ -45,7 +44,7 @@ func (h *PriorityQueue[T]) Len() int {
 
 type heapContainer[T any] struct {
 	nodes []T
-	less  Less[T]
+	less  algorithm.LessFunc[T]
 }
 
 func (hc heapContainer[T]) Len() int {
