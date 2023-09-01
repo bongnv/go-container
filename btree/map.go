@@ -3,240 +3,161 @@
 // license that can be found in the LICENSE file.
 package btree
 
-import (
-	"cmp"
-	"sync"
-	"sync/atomic"
-)
+import "cmp"
 
-type BTree[T any] struct {
-	isoid        uint64
-	mu           *sync.RWMutex
-	root         *node[T]
-	count        int
-	locks        bool
-	copyItems    bool
-	isoCopyItems bool
-	less         func(a, b T) bool
-	empty        T
-	max          int
-	min          int
+type mapPair[K cmp.Ordered, V any] struct {
+	// The `value` field should be before the `key` field because doing so
+	// allows for the Go compiler to optimize away the `value` field when
+	// it's a `struct{}`, which is the case for `btree.Set`.
+	value V
+	key   K
 }
 
-type node[T any] struct {
+type Map[K cmp.Ordered, V any] struct {
+	isoid         uint64
+	root          *mapNode[K, V]
+	count         int
+	empty         mapPair[K, V]
+	min           int // min items
+	max           int // max items
+	copyValues    bool
+	isoCopyValues bool
+}
+
+// NewMap creates a new map.
+func NewMap[K cmp.Ordered, V any]() *Map[K, V] {
+	return NewMapOptions[K, V](2)
+}
+
+func NewMapOptions[K cmp.Ordered, V any](degree int) *Map[K, V] {
+	m := new(Map[K, V])
+	m.init(degree)
+	return m
+}
+
+type mapNode[K cmp.Ordered, V any] struct {
 	isoid    uint64
 	count    int
-	items    []T
-	children *[]*node[T]
+	items    []mapPair[K, V]
+	children *[]*mapNode[K, V]
 }
 
-// PathHint is a utility type used with the *Hint() functions. Hints provide
-// faster operations for clustered keys.
-type PathHint struct {
-	used [8]bool
-	path [8]uint8
+// Copy the node for safe isolation.
+func (tr *Map[K, V]) copy(n *mapNode[K, V]) *mapNode[K, V] {
+	n2 := new(mapNode[K, V])
+	n2.isoid = tr.isoid
+	n2.count = n.count
+	n2.items = make([]mapPair[K, V], len(n.items), cap(n.items))
+	copy(n2.items, n.items)
+	if tr.copyValues {
+		for i := 0; i < len(n2.items); i++ {
+			n2.items[i].value = ((interface{})(n2.items[i].value)).(copier[V]).Copy()
+		}
+	} else if tr.isoCopyValues {
+		for i := 0; i < len(n2.items); i++ {
+			n2.items[i].value = ((interface{})(n2.items[i].value)).(isoCopier[V]).IsoCopy()
+		}
+	}
+	if !n.leaf() {
+		n2.children = new([]*mapNode[K, V])
+		*n2.children = make([]*mapNode[K, V], len(*n.children), tr.max+1)
+		copy(*n2.children, *n.children)
+	}
+	return n2
 }
 
-// Options for passing to New when creating a new BTree.
-type Options struct {
-	// Degree is used to define how many items and children each internal node
-	// can contain before it must branch. For example, a degree of 2 will
-	// create a 2-3-4 tree, where each node may contains 1-3 items and
-	// 2-4 children. See https://en.wikipedia.org/wiki/2–3–4_tree.
-	// Default is 32
-	Degree int
-	// NoLocks will disable locking. Otherwide a sync.RWMutex is used to
-	// ensure all operations are safe across multiple goroutines.
-	NoLocks bool
+// isoLoad loads the provided node and, if needed, performs a copy-on-write.
+func (tr *Map[K, V]) isoLoad(cn **mapNode[K, V], mut bool) *mapNode[K, V] {
+	if mut && (*cn).isoid != tr.isoid {
+		*cn = tr.copy(*cn)
+	}
+	return *cn
 }
 
-// New returns a new BTree
-func NewBTree[T cmp.Ordered]() *BTree[T] {
-	return NewBTreeOptions(cmp.Less[T], Options{Degree: 2})
+func (tr *Map[K, V]) Copy() *Map[K, V] {
+	return tr.IsoCopy()
 }
 
-func NewBTreeFunc[T any](less func(a, b T) bool) *BTree[T] {
-	return NewBTreeOptions(less, Options{})
-}
-
-func NewBTreeOptions[T any](less func(a, b T) bool, opts Options) *BTree[T] {
-	tr := new(BTree[T])
+func (tr *Map[K, V]) IsoCopy() *Map[K, V] {
+	tr2 := new(Map[K, V])
+	*tr2 = *tr
+	tr2.isoid = newIsoID()
 	tr.isoid = newIsoID()
-	tr.mu = new(sync.RWMutex)
-	tr.locks = !opts.NoLocks
-	tr.less = less
-	tr.init(opts.Degree)
-	return tr
+	return tr2
 }
 
-func (tr *BTree[T]) init(degree int) {
-	if tr.min != 0 {
-		return
-	}
-	tr.min, tr.max = degreeToMinMax(degree)
-	_, tr.copyItems = ((interface{})(tr.empty)).(copier[T])
-	if !tr.copyItems {
-		_, tr.isoCopyItems = ((interface{})(tr.empty)).(isoCopier[T])
-	}
-}
-
-func (tr *BTree[T]) newNode(leaf bool) *node[T] {
-	n := &node[T]{isoid: tr.isoid}
+func (tr *Map[K, V]) newNode(leaf bool) *mapNode[K, V] {
+	n := new(mapNode[K, V])
+	n.isoid = tr.isoid
 	if !leaf {
-		n.children = new([]*node[T])
+		n.children = new([]*mapNode[K, V])
 	}
 	return n
 }
 
 // leaf returns true if the node is a leaf.
-func (n *node[T]) leaf() bool {
+func (n *mapNode[K, V]) leaf() bool {
 	return n.children == nil
 }
 
-func (tr *BTree[T]) bsearch(n *node[T], key T) (index int, found bool) {
+func (tr *Map[K, V]) search(n *mapNode[K, V], key K) (index int, found bool) {
 	low, high := 0, len(n.items)
 	for low < high {
 		h := (low + high) / 2
-		if !tr.less(key, n.items[h]) {
+		if !(key < n.items[h].key) {
 			low = h + 1
 		} else {
 			high = h
 		}
 	}
-	if low > 0 && !tr.less(n.items[low-1], key) {
+	if low > 0 && !(n.items[low-1].key < key) {
 		return low - 1, true
 	}
 	return low, false
 }
 
-func (tr *BTree[T]) find(n *node[T], key T, hint *PathHint, depth int,
-) (index int, found bool) {
-	if hint == nil {
-		return tr.bsearch(n, key)
+func (tr *Map[K, V]) init(degree int) {
+	if tr.min != 0 {
+		return
 	}
-	return tr.hintsearch(n, key, hint, depth)
+	tr.min, tr.max = degreeToMinMax(degree)
+	_, tr.copyValues = ((interface{})(tr.empty.value)).(copier[V])
+	if !tr.copyValues {
+		_, tr.isoCopyValues = ((interface{})(tr.empty.value)).(isoCopier[V])
+	}
 }
 
-func (tr *BTree[T]) hintsearch(n *node[T], key T, hint *PathHint, depth int,
-) (index int, found bool) {
-	// Best case finds the exact match, updates the hint and returns.
-	// Worst case, updates the low and high bounds to binary search between.
-	low := 0
-	high := len(n.items) - 1
-	if depth < 8 && hint.used[depth] {
-		index = int(hint.path[depth])
-		if index >= len(n.items) {
-			// tail item
-			if tr.less(n.items[len(n.items)-1], key) {
-				index = len(n.items)
-				goto path_match
-			}
-			index = len(n.items) - 1
-		}
-		if tr.less(key, n.items[index]) {
-			if index == 0 || tr.less(n.items[index-1], key) {
-				goto path_match
-			}
-			high = index - 1
-		} else if tr.less(n.items[index], key) {
-			low = index + 1
-		} else {
-			found = true
-			goto path_match
-		}
-	}
-
-	// Do a binary search between low and high
-	// keep on going until low > high, where the guarantee on low is that
-	// key >= items[low - 1]
-	for low <= high {
-		mid := low + ((high+1)-low)/2
-		// if key >= n.items[mid], low = mid + 1
-		// which implies that key >= everything below low
-		if !tr.less(key, n.items[mid]) {
-			low = mid + 1
-		} else {
-			high = mid - 1
-		}
-	}
-
-	// if low > 0, n.items[low - 1] >= key,
-	// we have from before that key >= n.items[low - 1]
-	// therefore key = n.items[low - 1],
-	// and we have found the entry for key.
-	// Otherwise we must keep searching for the key in index `low`.
-	if low > 0 && !tr.less(n.items[low-1], key) {
-		index = low - 1
-		found = true
-	} else {
-		index = low
-		found = false
-	}
-
-path_match:
-	if depth < 8 {
-		hint.used[depth] = true
-		var pathIndex uint8
-		if n.leaf() && found {
-			pathIndex = uint8(index + 1)
-		} else {
-			pathIndex = uint8(index)
-		}
-		if pathIndex != hint.path[depth] {
-			hint.path[depth] = pathIndex
-			for i := depth + 1; i < 8; i++ {
-				hint.used[i] = false
-			}
-		}
-	}
-	return index, found
-}
-
-// SetHint sets or replace a value for a key using a path hint
-func (tr *BTree[T]) SetHint(item T, hint *PathHint) (prev T, replaced bool) {
-	if tr.locks {
-		tr.mu.Lock()
-		prev, replaced = tr.setHint(item, hint)
-		tr.mu.Unlock()
-	} else {
-		prev, replaced = tr.setHint(item, hint)
-	}
-	return prev, replaced
-}
-
-func (tr *BTree[T]) setHint(item T, hint *PathHint) (prev T, replaced bool) {
+// Set or replace a value for a key
+func (tr *Map[K, V]) Set(key K, value V) (V, bool) {
+	item := mapPair[K, V]{key: key, value: value}
 	if tr.root == nil {
 		tr.init(0)
 		tr.root = tr.newNode(true)
-		tr.root.items = append([]T{}, item)
+		tr.root.items = append([]mapPair[K, V]{}, item)
 		tr.root.count = 1
 		tr.count = 1
-		return tr.empty, false
+		return tr.empty.value, false
 	}
-	prev, replaced, split := tr.nodeSet(&tr.root, item, hint, 0)
+	prev, replaced, split := tr.nodeSet(&tr.root, item)
 	if split {
-		left := tr.isoLoad(&tr.root, true)
+		left := tr.root
 		right, median := tr.nodeSplit(left)
 		tr.root = tr.newNode(false)
-		*tr.root.children = make([]*node[T], 0, tr.max+1)
-		*tr.root.children = append([]*node[T]{}, left, right)
-		tr.root.items = append([]T{}, median)
+		*tr.root.children = make([]*mapNode[K, V], 0, tr.max+1)
+		*tr.root.children = append([]*mapNode[K, V]{}, left, right)
+		tr.root.items = append([]mapPair[K, V]{}, median)
 		tr.root.updateCount()
-		return tr.setHint(item, hint)
+		return tr.Set(item.key, item.value)
 	}
 	if replaced {
 		return prev, true
 	}
 	tr.count++
-	return tr.empty, false
+	return tr.empty.value, false
 }
 
-// Set or replace a value for a key
-func (tr *BTree[T]) Set(item T) (T, bool) {
-	return tr.SetHint(item, nil)
-}
-
-func (tr *BTree[T]) nodeSplit(n *node[T]) (right *node[T], median T) {
+func (tr *Map[K, V]) nodeSplit(n *mapNode[K, V],
+) (right *mapNode[K, V], median mapPair[K, V]) {
 	i := tr.max / 2
 	median = n.items[i]
 
@@ -255,11 +176,10 @@ func (tr *BTree[T]) nodeSplit(n *node[T]) (right *node[T], median T) {
 		*n.children = (*n.children)[: i+1 : i+1]
 	}
 	n.updateCount()
-
 	return right, median
 }
 
-func (n *node[T]) updateCount() {
+func (n *mapNode[K, V]) updateCount() {
 	n.count = len(n.items)
 	if !n.leaf() {
 		for i := 0; i < len(*n.children); i++ {
@@ -268,71 +188,29 @@ func (n *node[T]) updateCount() {
 	}
 }
 
-// Copy the node for safe isolation.
-func (tr *BTree[T]) copy(n *node[T]) *node[T] {
-	n2 := new(node[T])
-	n2.isoid = tr.isoid
-	n2.count = n.count
-	n2.items = make([]T, len(n.items), cap(n.items))
-	copy(n2.items, n.items)
-	if tr.copyItems {
-		for i := 0; i < len(n2.items); i++ {
-			n2.items[i] = ((interface{})(n2.items[i])).(copier[T]).Copy()
-		}
-	} else if tr.isoCopyItems {
-		for i := 0; i < len(n2.items); i++ {
-			n2.items[i] = ((interface{})(n2.items[i])).(isoCopier[T]).IsoCopy()
-		}
-	}
-	if !n.leaf() {
-		n2.children = new([]*node[T])
-		*n2.children = make([]*node[T], len(*n.children), tr.max+1)
-		copy(*n2.children, *n.children)
-	}
-	return n2
-}
-
-// isoLoad loads the provided node and, if needed, performs a copy-on-write.
-func (tr *BTree[T]) isoLoad(cn **node[T], mut bool) *node[T] {
-	if mut && (*cn).isoid != tr.isoid {
-		*cn = tr.copy(*cn)
-	}
-	return *cn
-}
-
-func (tr *BTree[T]) nodeSet(cn **node[T], item T,
-	hint *PathHint, depth int,
-) (prev T, replaced, split bool) {
-	if (*cn).isoid != tr.isoid {
-		*cn = tr.copy(*cn)
-	}
-	n := *cn
-	var i int
-	var found bool
-	if hint == nil {
-		i, found = tr.bsearch(n, item)
-	} else {
-		i, found = tr.hintsearch(n, item, hint, depth)
-	}
+func (tr *Map[K, V]) nodeSet(pn **mapNode[K, V], item mapPair[K, V],
+) (prev V, replaced, split bool) {
+	n := tr.isoLoad(pn, true)
+	i, found := tr.search(n, item.key)
 	if found {
-		prev = n.items[i]
+		prev = n.items[i].value
 		n.items[i] = item
 		return prev, true, false
 	}
 	if n.leaf() {
 		if len(n.items) == tr.max {
-			return tr.empty, false, true
+			return tr.empty.value, false, true
 		}
 		n.items = append(n.items, tr.empty)
 		copy(n.items[i+1:], n.items[i:])
 		n.items[i] = item
 		n.count++
-		return tr.empty, false, false
+		return tr.empty.value, false, false
 	}
-	prev, replaced, split = tr.nodeSet(&(*n.children)[i], item, hint, depth+1)
+	prev, replaced, split = tr.nodeSet(&(*n.children)[i], item)
 	if split {
 		if len(n.items) == tr.max {
-			return tr.empty, false, true
+			return tr.empty.value, false, true
 		}
 		right, median := tr.nodeSplit((*n.children)[i])
 		*n.children = append(*n.children, nil)
@@ -341,7 +219,7 @@ func (tr *BTree[T]) nodeSet(cn **node[T], item T,
 		n.items = append(n.items, tr.empty)
 		copy(n.items[i+1:], n.items[i:])
 		n.items[i] = median
-		return tr.nodeSet(&n, item, hint, depth)
+		return tr.nodeSet(&n, item)
 	}
 	if !replaced {
 		n.count++
@@ -349,30 +227,28 @@ func (tr *BTree[T]) nodeSet(cn **node[T], item T,
 	return prev, replaced, false
 }
 
-func (tr *BTree[T]) Scan(iter func(item T) bool) {
+func (tr *Map[K, V]) Scan(iter func(key K, value V) bool) {
 	tr.scan(iter, false)
 }
 
-func (tr *BTree[T]) ScanMut(iter func(item T) bool) {
+func (tr *Map[K, V]) ScanMut(iter func(key K, value V) bool) {
 	tr.scan(iter, true)
 }
 
-func (tr *BTree[T]) scan(iter func(item T) bool, mut bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) scan(iter func(key K, value V) bool, mut bool) {
 	if tr.root == nil {
 		return
 	}
 	tr.nodeScan(&tr.root, iter, mut)
 }
 
-func (tr *BTree[T]) nodeScan(cn **node[T], iter func(item T) bool, mut bool,
+func (tr *Map[K, V]) nodeScan(cn **mapNode[K, V],
+	iter func(key K, value V) bool, mut bool,
 ) bool {
 	n := tr.isoLoad(cn, mut)
 	if n.leaf() {
 		for i := 0; i < len(n.items); i++ {
-			if !iter(n.items[i]) {
+			if !iter(n.items[i].key, n.items[i].value) {
 				return false
 			}
 		}
@@ -382,82 +258,64 @@ func (tr *BTree[T]) nodeScan(cn **node[T], iter func(item T) bool, mut bool,
 		if !tr.nodeScan(&(*n.children)[i], iter, mut) {
 			return false
 		}
-		if !iter(n.items[i]) {
+		if !iter(n.items[i].key, n.items[i].value) {
 			return false
 		}
 	}
 	return tr.nodeScan(&(*n.children)[len(*n.children)-1], iter, mut)
 }
 
-// Get a value for key
-func (tr *BTree[T]) Get(key T) (T, bool) {
-	return tr.getHint(key, nil, false)
+// Get a value for key.
+func (tr *Map[K, V]) Get(key K) (V, bool) {
+	return tr.get(key, false)
 }
 
-func (tr *BTree[T]) GetMut(key T) (T, bool) {
-	return tr.getHint(key, nil, true)
+// GetMut gets a value for key.
+// If needed, this may perform a copy the resulting value before returning.
+//
+// Mut methods are only useful when all of the following are true:
+//   - The interior data of the value requires changes.
+//   - The value is a pointer type.
+//   - The BTree has been copied using `Copy()` or `IsoCopy()`.
+//   - The value itself has a `Copy()` or `IsoCopy()` method.
+//
+// Mut methods may modify the tree structure and should have the same
+// considerations as other mutable operations like Set, Delete, Clear, etc.
+func (tr *Map[K, V]) GetMut(key K) (V, bool) {
+	return tr.get(key, true)
 }
 
-// GetHint gets a value for key using a path hint
-func (tr *BTree[T]) GetHint(key T, hint *PathHint) (value T, ok bool) {
-	return tr.getHint(key, hint, false)
-}
-
-func (tr *BTree[T]) GetHintMut(key T, hint *PathHint) (value T, ok bool) {
-	return tr.getHint(key, hint, true)
-}
-
-// GetHint gets a value for key using a path hint
-func (tr *BTree[T]) getHint(key T, hint *PathHint, mut bool) (T, bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) get(key K, mut bool) (V, bool) {
 	if tr.root == nil {
-		return tr.empty, false
+		return tr.empty.value, false
 	}
 	n := tr.isoLoad(&tr.root, mut)
-	depth := 0
 	for {
-		i, found := tr.find(n, key, hint, depth)
+		i, found := tr.search(n, key)
 		if found {
-			return n.items[i], true
+			return n.items[i].value, true
 		}
-		if n.children == nil {
-			return tr.empty, false
+		if n.leaf() {
+			return tr.empty.value, false
 		}
 		n = tr.isoLoad(&(*n.children)[i], mut)
-		depth++
 	}
 }
 
 // Len returns the number of items in the tree
-func (tr *BTree[T]) Len() int {
+func (tr *Map[K, V]) Len() int {
 	return tr.count
 }
 
 // Delete a value for a key and returns the deleted value.
 // Returns false if there was no value by that key found.
-func (tr *BTree[T]) Delete(key T) (T, bool) {
-	return tr.DeleteHint(key, nil)
-}
-
-// DeleteHint deletes a value for a key using a path hint and returns the
-// deleted value.
-// Returns false if there was no value by that key found.
-func (tr *BTree[T]) DeleteHint(key T, hint *PathHint) (T, bool) {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
-	return tr.deleteHint(key, hint)
-}
-
-func (tr *BTree[T]) deleteHint(key T, hint *PathHint) (T, bool) {
+func (tr *Map[K, V]) Delete(key K) (V, bool) {
 	if tr.root == nil {
-		return tr.empty, false
+		return tr.empty.value, false
 	}
-	prev, deleted := tr.delete(&tr.root, false, key, hint, 0)
+	prev, deleted := tr.delete(&tr.root, false, key)
 	if !deleted {
-		return tr.empty, false
+		return tr.empty.value, false
 	}
 	if len(tr.root.items) == 0 && !tr.root.leaf() {
 		tr.root = (*tr.root.children)[0]
@@ -466,19 +324,18 @@ func (tr *BTree[T]) deleteHint(key T, hint *PathHint) (T, bool) {
 	if tr.count == 0 {
 		tr.root = nil
 	}
-	return prev, true
+	return prev.value, true
 }
 
-func (tr *BTree[T]) delete(cn **node[T], max bool, key T,
-	hint *PathHint, depth int,
-) (T, bool) {
-	n := tr.isoLoad(cn, true)
+func (tr *Map[K, V]) delete(pn **mapNode[K, V], max bool, key K,
+) (mapPair[K, V], bool) {
+	n := tr.isoLoad(pn, true)
 	var i int
 	var found bool
 	if max {
 		i, found = len(n.items)-1, true
 	} else {
-		i, found = tr.find(n, key, hint, depth)
+		i, found = tr.search(n, key)
 	}
 	if n.leaf() {
 		if found {
@@ -493,20 +350,20 @@ func (tr *BTree[T]) delete(cn **node[T], max bool, key T,
 		return tr.empty, false
 	}
 
-	var prev T
+	var prev mapPair[K, V]
 	var deleted bool
 	if found {
 		if max {
 			i++
-			prev, deleted = tr.delete(&(*n.children)[i], true, tr.empty, nil, 0)
+			prev, deleted = tr.delete(&(*n.children)[i], true, tr.empty.key)
 		} else {
 			prev = n.items[i]
-			maxItem, _ := tr.delete(&(*n.children)[i], true, tr.empty, nil, 0)
+			maxItem, _ := tr.delete(&(*n.children)[i], true, tr.empty.key)
 			deleted = true
 			n.items[i] = maxItem
 		}
 	} else {
-		prev, deleted = tr.delete(&(*n.children)[i], max, key, hint, depth+1)
+		prev, deleted = tr.delete(&(*n.children)[i], max, key)
 	}
 	if !deleted {
 		return tr.empty, false
@@ -521,7 +378,7 @@ func (tr *BTree[T]) delete(cn **node[T], max bool, key T,
 // nodeRebalance rebalances the child nodes following a delete operation.
 // Provide the index of the child node with the number of items that fell
 // below minItems.
-func (tr *BTree[T]) nodeRebalance(n *node[T], i int) {
+func (tr *Map[K, V]) nodeRebalance(n *mapNode[K, V], i int) {
 	if i == len(n.items) {
 		i--
 	}
@@ -604,35 +461,31 @@ func (tr *BTree[T]) nodeRebalance(n *node[T], i int) {
 // Ascend the tree within the range [pivot, last]
 // Pass nil for pivot to scan all item in ascending order
 // Return false to stop iterating
-func (tr *BTree[T]) Ascend(pivot T, iter func(item T) bool) {
+func (tr *Map[K, V]) Ascend(pivot K, iter func(key K, value V) bool) {
 	tr.ascend(pivot, iter, false)
 }
 
-func (tr *BTree[T]) AscendMut(pivot T, iter func(item T) bool) {
+func (tr *Map[K, V]) AscendMut(pivot K, iter func(key K, value V) bool) {
 	tr.ascend(pivot, iter, true)
 }
 
-func (tr *BTree[T]) ascend(pivot T, iter func(item T) bool, mut bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) ascend(pivot K, iter func(key K, value V) bool, mut bool) {
 	if tr.root == nil {
 		return
 	}
-	tr.nodeAscend(&tr.root, pivot, nil, 0, iter, mut)
+	tr.nodeAscend(&tr.root, pivot, iter, mut)
 }
 
 // The return value of this function determines whether we should keep iterating
 // upon this functions return.
-func (tr *BTree[T]) nodeAscend(cn **node[T], pivot T, hint *PathHint,
-	depth int, iter func(item T) bool, mut bool,
+func (tr *Map[K, V]) nodeAscend(cn **mapNode[K, V], pivot K,
+	iter func(key K, value V) bool, mut bool,
 ) bool {
 	n := tr.isoLoad(cn, mut)
-	i, found := tr.find(n, pivot, hint, depth)
+	i, found := tr.search(n, pivot)
 	if !found {
 		if !n.leaf() {
-			if !tr.nodeAscend(&(*n.children)[i], pivot, hint, depth+1, iter,
-				mut) {
+			if !tr.nodeAscend(&(*n.children)[i], pivot, iter, mut) {
 				return false
 			}
 		}
@@ -642,7 +495,7 @@ func (tr *BTree[T]) nodeAscend(cn **node[T], pivot T, hint *PathHint,
 	//   the index it was located at.
 	// - node is not found, and TODO: fill in.
 	for ; i < len(n.items); i++ {
-		if !iter(n.items[i]) {
+		if !iter(n.items[i].key, n.items[i].value) {
 			return false
 		}
 		if !n.leaf() {
@@ -654,30 +507,28 @@ func (tr *BTree[T]) nodeAscend(cn **node[T], pivot T, hint *PathHint,
 	return true
 }
 
-func (tr *BTree[T]) Reverse(iter func(item T) bool) {
+func (tr *Map[K, V]) Reverse(iter func(key K, value V) bool) {
 	tr.reverse(iter, false)
 }
 
-func (tr *BTree[T]) ReverseMut(iter func(item T) bool) {
+func (tr *Map[K, V]) ReverseMut(iter func(key K, value V) bool) {
 	tr.reverse(iter, true)
 }
 
-func (tr *BTree[T]) reverse(iter func(item T) bool, mut bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) reverse(iter func(key K, value V) bool, mut bool) {
 	if tr.root == nil {
 		return
 	}
 	tr.nodeReverse(&tr.root, iter, mut)
 }
 
-func (tr *BTree[T]) nodeReverse(cn **node[T], iter func(item T) bool, mut bool,
+func (tr *Map[K, V]) nodeReverse(cn **mapNode[K, V],
+	iter func(key K, value V) bool, mut bool,
 ) bool {
 	n := tr.isoLoad(cn, mut)
 	if n.leaf() {
 		for i := len(n.items) - 1; i >= 0; i-- {
-			if !iter(n.items[i]) {
+			if !iter(n.items[i].key, n.items[i].value) {
 				return false
 			}
 		}
@@ -687,7 +538,7 @@ func (tr *BTree[T]) nodeReverse(cn **node[T], iter func(item T) bool, mut bool,
 		return false
 	}
 	for i := len(n.items) - 1; i >= 0; i-- {
-		if !iter(n.items[i]) {
+		if !iter(n.items[i].key, n.items[i].value) {
 			return false
 		}
 		if !tr.nodeReverse(&(*n.children)[i], iter, mut) {
@@ -700,40 +551,40 @@ func (tr *BTree[T]) nodeReverse(cn **node[T], iter func(item T) bool, mut bool,
 // Descend the tree within the range [pivot, first]
 // Pass nil for pivot to scan all item in descending order
 // Return false to stop iterating
-func (tr *BTree[T]) Descend(pivot T, iter func(item T) bool) {
+func (tr *Map[K, V]) Descend(pivot K, iter func(key K, value V) bool) {
 	tr.descend(pivot, iter, false)
 }
 
-func (tr *BTree[T]) DescendMut(pivot T, iter func(item T) bool) {
+func (tr *Map[K, V]) DescendMut(pivot K, iter func(key K, value V) bool) {
 	tr.descend(pivot, iter, true)
 }
 
-func (tr *BTree[T]) descend(pivot T, iter func(item T) bool, mut bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) descend(
+	pivot K,
+	iter func(key K, value V) bool,
+	mut bool,
+) {
 	if tr.root == nil {
 		return
 	}
-	tr.nodeDescend(&tr.root, pivot, nil, 0, iter, mut)
+	tr.nodeDescend(&tr.root, pivot, iter, mut)
 }
 
-func (tr *BTree[T]) nodeDescend(cn **node[T], pivot T, hint *PathHint,
-	depth int, iter func(item T) bool, mut bool,
+func (tr *Map[K, V]) nodeDescend(cn **mapNode[K, V], pivot K,
+	iter func(key K, value V) bool, mut bool,
 ) bool {
 	n := tr.isoLoad(cn, mut)
-	i, found := tr.find(n, pivot, hint, depth)
+	i, found := tr.search(n, pivot)
 	if !found {
 		if !n.leaf() {
-			if !tr.nodeDescend(&(*n.children)[i], pivot, hint, depth+1, iter,
-				mut) {
+			if !tr.nodeDescend(&(*n.children)[i], pivot, iter, mut) {
 				return false
 			}
 		}
 		i--
 	}
 	for ; i >= 0; i-- {
-		if !iter(n.items[i]) {
+		if !iter(n.items[i].key, n.items[i].value) {
 			return false
 		}
 		if !n.leaf() {
@@ -746,22 +597,20 @@ func (tr *BTree[T]) nodeDescend(cn **node[T], pivot T, hint *PathHint,
 }
 
 // Load is for bulk loading pre-sorted items
-func (tr *BTree[T]) Load(item T) (T, bool) {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
+func (tr *Map[K, V]) Load(key K, value V) (V, bool) {
+	item := mapPair[K, V]{key: key, value: value}
 	if tr.root == nil {
-		return tr.setHint(item, nil)
+		return tr.Set(item.key, item.value)
 	}
 	n := tr.isoLoad(&tr.root, true)
 	for {
 		n.count++ // optimistically update counts
 		if n.leaf() {
 			if len(n.items) < tr.max {
-				if tr.less(n.items[len(n.items)-1], item) {
+				if n.items[len(n.items)-1].key < item.key {
 					n.items = append(n.items, item)
 					tr.count++
-					return tr.empty, false
+					return tr.empty.value, false
 				}
 			}
 			break
@@ -777,30 +626,28 @@ func (tr *BTree[T]) Load(item T) (T, bool) {
 		}
 		n = (*n.children)[len(*n.children)-1]
 	}
-	return tr.setHint(item, nil)
+	return tr.Set(item.key, item.value)
 }
 
 // Min returns the minimum item in tree.
 // Returns nil if the treex has no items.
-func (tr *BTree[T]) Min() (T, bool) {
+func (tr *Map[K, V]) Min() (K, V, bool) {
 	return tr.minMut(false)
 }
 
-func (tr *BTree[T]) MinMut() (T, bool) {
+func (tr *Map[K, V]) MinMut() (K, V, bool) {
 	return tr.minMut(true)
 }
 
-func (tr *BTree[T]) minMut(mut bool) (T, bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) minMut(mut bool) (key K, value V, ok bool) {
 	if tr.root == nil {
-		return tr.empty, false
+		return key, value, false
 	}
 	n := tr.isoLoad(&tr.root, mut)
 	for {
 		if n.leaf() {
-			return n.items[0], true
+			item := n.items[0]
+			return item.key, item.value, true
 		}
 		n = tr.isoLoad(&(*n.children)[0], mut)
 	}
@@ -808,25 +655,23 @@ func (tr *BTree[T]) minMut(mut bool) (T, bool) {
 
 // Max returns the maximum item in tree.
 // Returns nil if the tree has no items.
-func (tr *BTree[T]) Max() (T, bool) {
+func (tr *Map[K, V]) Max() (K, V, bool) {
 	return tr.maxMut(false)
 }
 
-func (tr *BTree[T]) MaxMut() (T, bool) {
+func (tr *Map[K, V]) MaxMut() (K, V, bool) {
 	return tr.maxMut(true)
 }
 
-func (tr *BTree[T]) maxMut(mut bool) (T, bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) maxMut(mut bool) (K, V, bool) {
 	if tr.root == nil {
-		return tr.empty, false
+		return tr.empty.key, tr.empty.value, false
 	}
 	n := tr.isoLoad(&tr.root, mut)
 	for {
 		if n.leaf() {
-			return n.items[len(n.items)-1], true
+			item := n.items[len(n.items)-1]
+			return item.key, item.value, true
 		}
 		n = tr.isoLoad(&(*n.children)[len(*n.children)-1], mut)
 	}
@@ -834,15 +679,12 @@ func (tr *BTree[T]) maxMut(mut bool) (T, bool) {
 
 // PopMin removes the minimum item in tree and returns it.
 // Returns nil if the tree has no items.
-func (tr *BTree[T]) PopMin() (T, bool) {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
+func (tr *Map[K, V]) PopMin() (K, V, bool) {
 	if tr.root == nil {
-		return tr.empty, false
+		return tr.empty.key, tr.empty.value, false
 	}
 	n := tr.isoLoad(&tr.root, true)
-	var item T
+	var item mapPair[K, V]
 	for {
 		n.count-- // optimistically update counts
 		if n.leaf() {
@@ -857,7 +699,7 @@ func (tr *BTree[T]) PopMin() (T, bool) {
 			if tr.count == 0 {
 				tr.root = nil
 			}
-			return item, true
+			return item.key, item.value, true
 		}
 		n = tr.isoLoad(&(*n.children)[0], true)
 	}
@@ -870,20 +712,21 @@ func (tr *BTree[T]) PopMin() (T, bool) {
 		}
 		n = (*n.children)[0]
 	}
-	return tr.deleteHint(item, nil)
+	value, deleted := tr.Delete(item.key)
+	if deleted {
+		return item.key, value, true
+	}
+	return tr.empty.key, tr.empty.value, false
 }
 
 // PopMax removes the maximum item in tree and returns it.
 // Returns nil if the tree has no items.
-func (tr *BTree[T]) PopMax() (T, bool) {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
+func (tr *Map[K, V]) PopMax() (K, V, bool) {
 	if tr.root == nil {
-		return tr.empty, false
+		return tr.empty.key, tr.empty.value, false
 	}
 	n := tr.isoLoad(&tr.root, true)
-	var item T
+	var item mapPair[K, V]
 	for {
 		n.count-- // optimistically update counts
 		if n.leaf() {
@@ -897,7 +740,7 @@ func (tr *BTree[T]) PopMax() (T, bool) {
 			if tr.count == 0 {
 				tr.root = nil
 			}
-			return item, true
+			return item.key, item.value, true
 		}
 		n = tr.isoLoad(&(*n.children)[len(*n.children)-1], true)
 	}
@@ -910,37 +753,38 @@ func (tr *BTree[T]) PopMax() (T, bool) {
 		}
 		n = (*n.children)[len(*n.children)-1]
 	}
-	return tr.deleteHint(item, nil)
+	value, deleted := tr.Delete(item.key)
+	if deleted {
+		return item.key, value, true
+	}
+	return tr.empty.key, tr.empty.value, false
 }
 
 // GetAt returns the value at index.
 // Return nil if the tree is empty or the index is out of bounds.
-func (tr *BTree[T]) GetAt(index int) (T, bool) {
+func (tr *Map[K, V]) GetAt(index int) (K, V, bool) {
 	return tr.getAt(index, false)
 }
 
-func (tr *BTree[T]) GetAtMut(index int) (T, bool) {
+func (tr *Map[K, V]) GetAtMut(index int) (K, V, bool) {
 	return tr.getAt(index, true)
 }
 
-func (tr *BTree[T]) getAt(index int, mut bool) (T, bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
+func (tr *Map[K, V]) getAt(index int, mut bool) (K, V, bool) {
 	if tr.root == nil || index < 0 || index >= tr.count {
-		return tr.empty, false
+		return tr.empty.key, tr.empty.value, false
 	}
 	n := tr.isoLoad(&tr.root, mut)
 	for {
 		if n.leaf() {
-			return n.items[index], true
+			return n.items[index].key, n.items[index].value, true
 		}
 		i := 0
 		for ; i < len(n.items); i++ {
 			if index < (*n.children)[i].count {
 				break
 			} else if index == (*n.children)[i].count {
-				return n.items[i], true
+				return n.items[i].key, n.items[i].value, true
 			}
 			index -= (*n.children)[i].count + 1
 		}
@@ -950,16 +794,13 @@ func (tr *BTree[T]) getAt(index int, mut bool) (T, bool) {
 
 // DeleteAt deletes the item at index.
 // Return nil if the tree is empty or the index is out of bounds.
-func (tr *BTree[T]) DeleteAt(index int) (T, bool) {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
+func (tr *Map[K, V]) DeleteAt(index int) (K, V, bool) {
 	if tr.root == nil || index < 0 || index >= tr.count {
-		return tr.empty, false
+		return tr.empty.key, tr.empty.value, false
 	}
 	var pathbuf [8]uint8 // track the path
 	path := pathbuf[:0]
-	var item T
+	var item mapPair[K, V]
 	n := tr.isoLoad(&tr.root, true)
 outer:
 	for {
@@ -978,7 +819,7 @@ outer:
 			if tr.count == 0 {
 				tr.root = nil
 			}
-			return item, true
+			return item.key, item.value, true
 		}
 		i := 0
 		for ; i < len(n.items); i++ {
@@ -995,27 +836,23 @@ outer:
 		n = tr.isoLoad(&(*n.children)[i], true)
 	}
 	// revert the counts
-	var hint PathHint
 	n = tr.root
 	for i := 0; i < len(path); i++ {
-		if i < len(hint.path) {
-			hint.path[i] = uint8(path[i])
-			hint.used[i] = true
-		}
 		n.count++
 		if !n.leaf() {
 			n = (*n.children)[uint8(path[i])]
 		}
 	}
-	return tr.deleteHint(item, &hint)
+	value, deleted := tr.Delete(item.key)
+	if deleted {
+		return item.key, value, true
+	}
+	return tr.empty.key, tr.empty.value, false
 }
 
 // Height returns the height of the tree.
 // Returns zero if tree has no items.
-func (tr *BTree[T]) Height() int {
-	if tr.lock(false) {
-		defer tr.unlock(false)
-	}
+func (tr *Map[K, V]) Height() int {
 	var height int
 	if tr.root != nil {
 		n := tr.root
@@ -1030,124 +867,41 @@ func (tr *BTree[T]) Height() int {
 	return height
 }
 
-// Walk iterates over all items in tree, in order.
-// The items param will contain one or more items.
-func (tr *BTree[T]) Walk(iter func(item []T) bool) {
-	tr.walk(iter, false)
-}
-
-func (tr *BTree[T]) WalkMut(iter func(item []T) bool) {
-	tr.walk(iter, true)
-}
-
-func (tr *BTree[T]) walk(iter func(item []T) bool, mut bool) {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
-	if tr.root == nil {
-		return
-	}
-	tr.nodeWalk(&tr.root, iter, mut)
-}
-
-func (tr *BTree[T]) nodeWalk(cn **node[T], iter func(item []T) bool, mut bool,
-) bool {
-	n := tr.isoLoad(cn, mut)
-	if n.leaf() {
-		if !iter(n.items) {
-			return false
-		}
-	} else {
-		for i := 0; i < len(n.items); i++ {
-			if !tr.nodeWalk(&(*n.children)[i], iter, mut) {
-				return false
-			}
-			if !iter(n.items[i : i+1]) {
-				return false
-			}
-		}
-		if !tr.nodeWalk(&(*n.children)[len(n.items)], iter, mut) {
-			return false
-		}
-	}
-	return true
-}
-
-// Copy the tree. This is a copy-on-write operation and is very fast because
-// it only performs a shadowed copy.
-func (tr *BTree[T]) Copy() *BTree[T] {
-	return tr.IsoCopy()
-}
-
-func (tr *BTree[T]) IsoCopy() *BTree[T] {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
-	tr.isoid = newIsoID()
-	tr2 := new(BTree[T])
-	*tr2 = *tr
-	tr2.mu = new(sync.RWMutex)
-	tr2.isoid = newIsoID()
-	return tr2
-}
-
-func (tr *BTree[T]) lock(write bool) bool {
-	if tr.locks {
-		if write {
-			tr.mu.Lock()
-		} else {
-			tr.mu.RLock()
-		}
-	}
-	return tr.locks
-}
-
-func (tr *BTree[T]) unlock(write bool) {
-	if write {
-		tr.mu.Unlock()
-	} else {
-		tr.mu.RUnlock()
-	}
-}
-
-// Iter represents an iterator
-type IterG[T any] struct {
-	tr      *BTree[T]
+// MapIter represents an iterator for btree.Map
+type MapIter[K cmp.Ordered, V any] struct {
+	tr      *Map[K, V]
 	mut     bool
-	locked  bool
 	seeked  bool
 	atstart bool
 	atend   bool
-	stack   []iterStackItemG[T]
-	item    T
+	stack   []mapIterStackItem[K, V]
+	item    mapPair[K, V]
 }
 
-type iterStackItemG[T any] struct {
-	n *node[T]
+type mapIterStackItem[K cmp.Ordered, V any] struct {
+	n *mapNode[K, V]
 	i int
 }
 
 // Iter returns a read-only iterator.
-// The Release method must be called finished with iterator.
-func (tr *BTree[T]) Iter() IterG[T] {
+func (tr *Map[K, V]) Iter() MapIter[K, V] {
 	return tr.iter(false)
 }
 
-func (tr *BTree[T]) IterMut() IterG[T] {
+func (tr *Map[K, V]) IterMut() MapIter[K, V] {
 	return tr.iter(true)
 }
 
-func (tr *BTree[T]) iter(mut bool) IterG[T] {
-	var iter IterG[T]
+func (tr *Map[K, V]) iter(mut bool) MapIter[K, V] {
+	var iter MapIter[K, V]
 	iter.tr = tr
 	iter.mut = mut
-	iter.locked = tr.lock(iter.mut)
 	return iter
 }
 
 // Seek to item greater-or-equal-to key.
 // Returns false if there was no item found.
-func (iter *IterG[T]) Seek(key T) bool {
+func (iter *MapIter[K, V]) Seek(key K) bool {
 	if iter.tr == nil {
 		return false
 	}
@@ -1158,8 +912,8 @@ func (iter *IterG[T]) Seek(key T) bool {
 	}
 	n := iter.tr.isoLoad(&iter.tr.root, iter.mut)
 	for {
-		i, found := iter.tr.find(n, key, nil, 0)
-		iter.stack = append(iter.stack, iterStackItemG[T]{n, i})
+		i, found := iter.tr.search(n, key)
+		iter.stack = append(iter.stack, mapIterStackItem[K, V]{n, i})
 		if found {
 			iter.item = n.items[i]
 			return true
@@ -1174,7 +928,7 @@ func (iter *IterG[T]) Seek(key T) bool {
 
 // First moves iterator to first item in tree.
 // Returns false if the tree is empty.
-func (iter *IterG[T]) First() bool {
+func (iter *MapIter[K, V]) First() bool {
 	if iter.tr == nil {
 		return false
 	}
@@ -1187,7 +941,7 @@ func (iter *IterG[T]) First() bool {
 	}
 	n := iter.tr.isoLoad(&iter.tr.root, iter.mut)
 	for {
-		iter.stack = append(iter.stack, iterStackItemG[T]{n, 0})
+		iter.stack = append(iter.stack, mapIterStackItem[K, V]{n, 0})
 		if n.leaf() {
 			break
 		}
@@ -1200,7 +954,7 @@ func (iter *IterG[T]) First() bool {
 
 // Last moves iterator to last item in tree.
 // Returns false if the tree is empty.
-func (iter *IterG[T]) Last() bool {
+func (iter *MapIter[K, V]) Last() bool {
 	if iter.tr == nil {
 		return false
 	}
@@ -1211,7 +965,7 @@ func (iter *IterG[T]) Last() bool {
 	}
 	n := iter.tr.isoLoad(&iter.tr.root, iter.mut)
 	for {
-		iter.stack = append(iter.stack, iterStackItemG[T]{n, len(n.items)})
+		iter.stack = append(iter.stack, mapIterStackItem[K, V]{n, len(n.items)})
 		if n.leaf() {
 			iter.stack[len(iter.stack)-1].i--
 			break
@@ -1223,23 +977,10 @@ func (iter *IterG[T]) Last() bool {
 	return true
 }
 
-// Release the iterator.
-func (iter *IterG[T]) Release() {
-	if iter.tr == nil {
-		return
-	}
-	if iter.locked {
-		iter.tr.unlock(iter.mut)
-		iter.locked = false
-	}
-	iter.stack = nil
-	iter.tr = nil
-}
-
 // Next moves iterator to the next item in iterator.
 // Returns false if the tree is empty or the iterator is at the end of
 // the tree.
-func (iter *IterG[T]) Next() bool {
+func (iter *MapIter[K, V]) Next() bool {
 	if iter.tr == nil {
 		return false
 	}
@@ -1271,7 +1012,7 @@ func (iter *IterG[T]) Next() bool {
 	} else {
 		n := iter.tr.isoLoad(&(*s.n.children)[s.i], iter.mut)
 		for {
-			iter.stack = append(iter.stack, iterStackItemG[T]{n, 0})
+			iter.stack = append(iter.stack, mapIterStackItem[K, V]{n, 0})
 			if n.leaf() {
 				break
 			}
@@ -1286,7 +1027,7 @@ func (iter *IterG[T]) Next() bool {
 // Prev moves iterator to the previous item in iterator.
 // Returns false if the tree is empty or the iterator is at the beginning of
 // the tree.
-func (iter *IterG[T]) Prev() bool {
+func (iter *MapIter[K, V]) Prev() bool {
 	if iter.tr == nil {
 		return false
 	}
@@ -1319,7 +1060,8 @@ func (iter *IterG[T]) Prev() bool {
 	} else {
 		n := iter.tr.isoLoad(&(*s.n.children)[s.i], iter.mut)
 		for {
-			iter.stack = append(iter.stack, iterStackItemG[T]{n, len(n.items)})
+			iter.stack = append(iter.stack,
+				mapIterStackItem[K, V]{n, len(n.items)})
 			if n.leaf() {
 				iter.stack[len(iter.stack)-1].i--
 				break
@@ -1332,73 +1074,111 @@ func (iter *IterG[T]) Prev() bool {
 	return true
 }
 
-// Item returns the current iterator item.
-func (iter *IterG[T]) Item() T {
-	return iter.item
+// Key returns the current iterator item key.
+func (iter *MapIter[K, V]) Key() K {
+	return iter.item.key
 }
 
-// Items returns all the items in order.
-func (tr *BTree[T]) Items() []T {
-	return tr.items(false)
+// Value returns the current iterator item value.
+func (iter *MapIter[K, V]) Value() V {
+	return iter.item.value
 }
 
-func (tr *BTree[T]) ItemsMut() []T {
-	return tr.items(true)
+// Values returns all the values in order.
+func (tr *Map[K, V]) Values() []V {
+	return tr.values(false)
 }
 
-func (tr *BTree[T]) items(mut bool) []T {
-	if tr.lock(mut) {
-		defer tr.unlock(mut)
-	}
-	items := make([]T, 0, tr.Len())
+func (tr *Map[K, V]) ValuesMut() []V {
+	return tr.values(true)
+}
+
+func (tr *Map[K, V]) values(mut bool) []V {
+	values := make([]V, 0, tr.Len())
 	if tr.root != nil {
-		items = tr.nodeItems(&tr.root, items, mut)
+		values = tr.nodeValues(&tr.root, values, mut)
 	}
-	return items
+	return values
 }
 
-func (tr *BTree[T]) nodeItems(cn **node[T], items []T, mut bool) []T {
+func (tr *Map[K, V]) nodeValues(cn **mapNode[K, V], values []V, mut bool) []V {
 	n := tr.isoLoad(cn, mut)
 	if n.leaf() {
-		return append(items, n.items...)
+		for i := 0; i < len(n.items); i++ {
+			values = append(values, n.items[i].value)
+		}
+		return values
 	}
 	for i := 0; i < len(n.items); i++ {
-		items = tr.nodeItems(&(*n.children)[i], items, mut)
-		items = append(items, n.items[i])
+		values = tr.nodeValues(&(*n.children)[i], values, mut)
+		values = append(values, n.items[i].value)
 	}
-	return tr.nodeItems(&(*n.children)[len(*n.children)-1], items, mut)
+	return tr.nodeValues(&(*n.children)[len(*n.children)-1], values, mut)
+}
+
+// Keys returns all the keys in order.
+func (tr *Map[K, V]) Keys() []K {
+	keys := make([]K, 0, tr.Len())
+	if tr.root != nil {
+		keys = tr.root.keys(keys)
+	}
+	return keys
+}
+
+func (n *mapNode[K, V]) keys(keys []K) []K {
+	if n.leaf() {
+		for i := 0; i < len(n.items); i++ {
+			keys = append(keys, n.items[i].key)
+		}
+		return keys
+	}
+	for i := 0; i < len(n.items); i++ {
+		keys = (*n.children)[i].keys(keys)
+		keys = append(keys, n.items[i].key)
+	}
+	return (*n.children)[len(*n.children)-1].keys(keys)
+}
+
+// KeyValues returns all the keys and values in order.
+func (tr *Map[K, V]) KeyValues() ([]K, []V) {
+	return tr.keyValues(false)
+}
+
+func (tr *Map[K, V]) KeyValuesMut() ([]K, []V) {
+	return tr.keyValues(true)
+}
+
+func (tr *Map[K, V]) keyValues(mut bool) ([]K, []V) {
+	keys := make([]K, 0, tr.Len())
+	values := make([]V, 0, tr.Len())
+	if tr.root != nil {
+		keys, values = tr.nodeKeyValues(&tr.root, keys, values, mut)
+	}
+	return keys, values
+}
+
+func (tr *Map[K, V]) nodeKeyValues(cn **mapNode[K, V], keys []K, values []V,
+	mut bool,
+) ([]K, []V) {
+	n := tr.isoLoad(cn, mut)
+	if n.leaf() {
+		for i := 0; i < len(n.items); i++ {
+			keys = append(keys, n.items[i].key)
+			values = append(values, n.items[i].value)
+		}
+		return keys, values
+	}
+	for i := 0; i < len(n.items); i++ {
+		keys, values = tr.nodeKeyValues(&(*n.children)[i], keys, values, mut)
+		keys = append(keys, n.items[i].key)
+		values = append(values, n.items[i].value)
+	}
+	return tr.nodeKeyValues(&(*n.children)[len(*n.children)-1], keys, values,
+		mut)
 }
 
 // Clear will delete all items.
-func (tr *BTree[T]) Clear() {
-	if tr.lock(true) {
-		defer tr.unlock(true)
-	}
-	tr.root = nil
+func (tr *Map[K, V]) Clear() {
 	tr.count = 0
-}
-
-var gisoid uint64
-
-func newIsoID() uint64 {
-	return atomic.AddUint64(&gisoid, 1)
-}
-
-type copier[T any] interface {
-	Copy() T
-}
-
-type isoCopier[T any] interface {
-	IsoCopy() T
-}
-
-func degreeToMinMax(deg int) (min, max int) {
-	if deg <= 0 {
-		deg = 32
-	} else if deg == 1 {
-		deg = 2 // must have at least 2
-	}
-	max = deg*2 - 1 // max items per node. max children is +1
-	min = max / 2
-	return min, max
+	tr.root = nil
 }
