@@ -134,53 +134,6 @@ func (tr *Set[K]) Height() int {
 	return tr.base.Height()
 }
 
-// SetIter represents an iterator for btree.Set
-type SetIter[K cmp.Ordered] struct {
-	base MapIter[K, struct{}]
-}
-
-// Iter returns a read-only iterator.
-func (tr *Set[K]) Iter() SetIter[K] {
-	return SetIter[K]{tr.base.Iter()}
-}
-
-// Seek to item greater-or-equal-to key.
-// Returns false if there was no item found.
-func (iter *SetIter[K]) Seek(key K) bool {
-	return iter.base.Seek(key)
-}
-
-// First moves iterator to first item in tree.
-// Returns false if the tree is empty.
-func (iter *SetIter[K]) First() bool {
-	return iter.base.First()
-}
-
-// Last moves iterator to last item in tree.
-// Returns false if the tree is empty.
-func (iter *SetIter[K]) Last() bool {
-	return iter.base.Last()
-}
-
-// Next moves iterator to the next item in iterator.
-// Returns false if the tree is empty or the iterator is at the end of
-// the tree.
-func (iter *SetIter[K]) Next() bool {
-	return iter.base.Next()
-}
-
-// Prev moves iterator to the previous item in iterator.
-// Returns false if the tree is empty or the iterator is at the beginning of
-// the tree.
-func (iter *SetIter[K]) Prev() bool {
-	return iter.base.Prev()
-}
-
-// Key returns the current iterator item key.
-func (iter *SetIter[K]) Key() K {
-	return iter.base.Key()
-}
-
 // Keys returns all the keys in order.
 func (tr *Set[K]) Keys() []K {
 	return tr.base.Keys()
