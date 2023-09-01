@@ -22,7 +22,7 @@ func testMapNewBTree() *Map[testMapKind, testMapKind] {
 }
 
 func testMapNewBTreeDegrees(degree int) *Map[testMapKind, testMapKind] {
-	return NewMapOptions[testMapKind, testMapKind](degree)
+	return NewMapDegree[testMapKind, testMapKind](degree)
 }
 
 func randMapKeys(N int) (keys []testMapKind) {

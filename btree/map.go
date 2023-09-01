@@ -26,10 +26,10 @@ type Map[K cmp.Ordered, V any] struct {
 
 // NewMap creates a new map.
 func NewMap[K cmp.Ordered, V any]() *Map[K, V] {
-	return NewMapOptions[K, V](2)
+	return NewMapDegree[K, V](2)
 }
 
-func NewMapOptions[K cmp.Ordered, V any](degree int) *Map[K, V] {
+func NewMapDegree[K cmp.Ordered, V any](degree int) *Map[K, V] {
 	m := new(Map[K, V])
 	m.init(degree)
 	return m
