@@ -32,3 +32,12 @@ func (s *Set[T]) Contain(val T) bool {
 	_, found := s.container[val]
 	return found
 }
+
+// Scan scans through the set in an arbitrary order.
+func (s *Set[T]) Scan(itor func(val T) bool) {
+	for val := range s.container {
+		if !itor(val) {
+			return
+		}
+	}
+}
