@@ -231,8 +231,8 @@ func (tr *BTree[T]) setHint(item T, hint *PathHint) (prev T, replaced bool) {
 	return tr.empty, false
 }
 
-// Set or replace a value for a key
-func (tr *BTree[T]) Set(item T) (T, bool) {
+// ReplaceOrInsert replaces or inserts if the item doesn't exist.
+func (tr *BTree[T]) ReplaceOrInsert(item T) (T, bool) {
 	return tr.SetHint(item, nil)
 }
 

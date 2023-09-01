@@ -41,8 +41,8 @@ func (tr *Set[K]) Scan(iter func(key K) bool) {
 	})
 }
 
-// Get a value for key
-func (tr *Set[K]) Contains(key K) bool {
+// Has checks whether a key exists or not.
+func (tr *Set[K]) Has(key K) bool {
 	_, ok := tr.base.Get(key)
 	return ok
 }

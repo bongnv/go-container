@@ -100,7 +100,7 @@ func TestGenericDescend(t *testing.T) {
 	var keys []testKind
 	for i := 0; i < 1000; i += 10 {
 		keys = append(keys, testMakeItem(i))
-		tr.Set(keys[len(keys)-1])
+		tr.ReplaceOrInsert(keys[len(keys)-1])
 	}
 	var exp []testKind
 	tr.Reverse(func(item testKind) bool {
@@ -159,7 +159,7 @@ func TestGenericAscend(t *testing.T) {
 	var keys []testKind
 	for i := 0; i < 1000; i += 10 {
 		keys = append(keys, testMakeItem(i))
-		tr.Set(keys[len(keys)-1])
+		tr.ReplaceOrInsert(keys[len(keys)-1])
 		tr.sane()
 	}
 	exp := keys
@@ -198,7 +198,7 @@ func TestGenericItems(t *testing.T) {
 	var keys []testKind
 	for i := 0; i < 100000; i += 10 {
 		keys = append(keys, testMakeItem(i))
-		tr.Set(keys[len(keys)-1])
+		tr.ReplaceOrInsert(keys[len(keys)-1])
 		tr.sane()
 	}
 	keys2 := tr.Items()
@@ -218,7 +218,7 @@ func TestGenericSimpleRandom(t *testing.T) {
 			if v, ok := tr.Get(items[i]); ok || !tr.eq(v, tr.empty) {
 				panic("!")
 			}
-			if v, ok := tr.Set(items[i]); ok || !tr.eq(v, tr.empty) {
+			if v, ok := tr.ReplaceOrInsert(items[i]); ok || !tr.eq(v, tr.empty) {
 				panic("!")
 			}
 			if v, ok := tr.Get(items[i]); !ok || !tr.eq(v, items[i]) {
@@ -227,7 +227,7 @@ func TestGenericSimpleRandom(t *testing.T) {
 		}
 		tr.sane()
 		for i := 0; i < len(items); i++ {
-			if v, ok := tr.Set(items[i]); !ok || !tr.eq(v, items[i]) {
+			if v, ok := tr.ReplaceOrInsert(items[i]); !ok || !tr.eq(v, items[i]) {
 				panic("!")
 			}
 		}
@@ -289,7 +289,7 @@ func TestGenericBTree(t *testing.T) {
 
 	// insert all items
 	for _, key := range keys {
-		if v, ok := tr.Set(key); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.ReplaceOrInsert(key); ok || !tr.eq(v, tr.empty) {
 			t.Fatal("expected false")
 		}
 		tr.sane()
@@ -412,7 +412,7 @@ func TestGenericBTree(t *testing.T) {
 
 	// replace second half
 	for _, key := range keys[len(keys)/2:] {
-		if v, ok := tr.Set(key); !ok || !tr.eq(v, key) {
+		if v, ok := tr.ReplaceOrInsert(key); !ok || !tr.eq(v, key) {
 			t.Fatalf("expected '%v', got '%v'", key, v)
 		}
 		tr.sane()
@@ -451,11 +451,11 @@ func TestGenericBTree(t *testing.T) {
 
 func TestGenericBTreeOne(t *testing.T) {
 	tr := testNewBTree()
-	tr.Set(testMakeItem(1))
+	tr.ReplaceOrInsert(testMakeItem(1))
 	tr.Delete(testMakeItem(1))
-	tr.Set(testMakeItem(1))
+	tr.ReplaceOrInsert(testMakeItem(1))
 	tr.Delete(testMakeItem(1))
-	tr.Set(testMakeItem(1))
+	tr.ReplaceOrInsert(testMakeItem(1))
 	tr.Delete(testMakeItem(1))
 	if tr.Len() != 0 {
 		panic("!")
@@ -468,7 +468,7 @@ func TestGenericBTree256(t *testing.T) {
 	var n int
 	for j := 0; j < 2; j++ {
 		for _, i := range rand.Perm(256) {
-			tr.Set(testMakeItem(i))
+			tr.ReplaceOrInsert(testMakeItem(i))
 			n++
 			if tr.Len() != n {
 				t.Fatalf("expected 256, got %d", n)
@@ -531,7 +531,7 @@ func TestGenericRandom(t *testing.T) {
 	tr.sane()
 	shuffleItems(keys)
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.Set(keys[i]); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.ReplaceOrInsert(keys[i]); ok || !tr.eq(v, tr.empty) {
 			t.Fatalf("expected nil")
 		}
 		if i%123 == 0 {
@@ -672,8 +672,8 @@ func TestGenericRandom(t *testing.T) {
 		t.Fatalf("expected '%v', got '%v'", keys[len(keys)-1], v)
 	}
 	tr.sane()
-	tr.Set(keys[0])
-	tr.Set(keys[len(keys)-1])
+	tr.ReplaceOrInsert(keys[0])
+	tr.ReplaceOrInsert(keys[len(keys)-1])
 	shuffleItems(keys)
 	var hint PathHint
 	for i := 0; i < len(keys); i++ {
@@ -691,7 +691,7 @@ func TestGenericRandom(t *testing.T) {
 		}
 	}
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.Set(keys[i]); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.ReplaceOrInsert(keys[i]); ok || !tr.eq(v, tr.empty) {
 			t.Fatalf("expected nil")
 		}
 	}
@@ -701,7 +701,7 @@ func TestGenericRandom(t *testing.T) {
 		}
 	}
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.Set(keys[i]); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.ReplaceOrInsert(keys[i]); ok || !tr.eq(v, tr.empty) {
 			t.Fatalf("expected nil")
 		}
 	}
@@ -718,7 +718,7 @@ func TestGenericRandom(t *testing.T) {
 		t.Fatalf("expected '%v', got '%v'", tr.empty, v)
 	}
 	tr.sane()
-	tr.Set(keys[len(keys)/2])
+	tr.ReplaceOrInsert(keys[len(keys)/2])
 	tr.sane()
 	for i := 0; i < len(keys); i++ {
 		if v, ok := tr.Delete(keys[i]); !ok || !tr.eq(v, keys[i]) {
@@ -822,7 +822,7 @@ func TestGenericDeleteAt(t *testing.T) {
 	tr := testNewBTree()
 	keys := randKeys(N)
 	for _, key := range keys {
-		tr.Set(key)
+		tr.ReplaceOrInsert(key)
 	}
 	tr.sane()
 	for tr.Len() > 0 {
@@ -840,11 +840,11 @@ func TestGenericCopy(t *testing.T) {
 	items := randKeys(100000)
 	itemsM := testNewBTree()
 	for i := 0; i < len(items); i++ {
-		itemsM.Set(items[i])
+		itemsM.ReplaceOrInsert(items[i])
 	}
 	tr := testNewBTree()
 	for i := 0; i < len(items); i++ {
-		tr.Set(items[i])
+		tr.ReplaceOrInsert(items[i])
 	}
 	var wait atomic.Int32
 	var testCopyDeep func(tr *BTree[testKind], parent bool)
@@ -870,7 +870,7 @@ func TestGenericCopy(t *testing.T) {
 			items2[i] = x
 		}
 		for i := 0; i < len(items2); i++ {
-			if v, ok := tr.Set(items2[i]); ok || !tr.eq(v, tr.empty) {
+			if v, ok := tr.ReplaceOrInsert(items2[i]); ok || !tr.eq(v, tr.empty) {
 				panic("!")
 			}
 		}
@@ -1301,7 +1301,7 @@ func TestGenericIterSeek(t *testing.T) {
 	tr := NewBTree[int]()
 	var all []int
 	for i := 0; i < 10000; i++ {
-		tr.Set(i * 2)
+		tr.ReplaceOrInsert(i * 2)
 		all = append(all, i)
 	}
 	_ = all
@@ -1333,7 +1333,7 @@ func TestGenericIterSeekPrefix(t *testing.T) {
 	tr := NewBTree[int]()
 	count := 10_000
 	for i := 0; i < count; i++ {
-		tr.Set(i * 2)
+		tr.ReplaceOrInsert(i * 2)
 	}
 	for i := 0; i < count; i++ {
 		iter := tr.Iter()

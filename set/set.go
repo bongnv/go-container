@@ -28,7 +28,7 @@ func (s *Set[T]) Delete(val T) {
 }
 
 // Contain checks whether the set contains the given value or not.
-func (s *Set[T]) Contain(val T) bool {
+func (s *Set[T]) Has(val T) bool {
 	_, found := s.container[val]
 	return found
 }

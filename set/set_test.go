@@ -17,16 +17,16 @@ func TestSet(t *testing.T) {
 			t.Fatalf("Incorrect size: %v", diff)
 		}
 
-		if diff := cmp.Diff(s.Contain("a"), true); diff != "" {
+		if diff := cmp.Diff(s.Has("a"), true); diff != "" {
 			t.Fatal(diff)
 		}
 
-		if diff := cmp.Diff(s.Contain("d"), false); diff != "" {
+		if diff := cmp.Diff(s.Has("d"), false); diff != "" {
 			t.Fatal(diff)
 		}
 
 		s.Delete("b")
-		if diff := cmp.Diff(s.Contain("b"), false); diff != "" {
+		if diff := cmp.Diff(s.Has("b"), false); diff != "" {
 			t.Fatal(diff)
 		}
 
