@@ -100,10 +100,10 @@ func TestGenericDescend(t *testing.T) {
 	var keys []testKind
 	for i := 0; i < 1000; i += 10 {
 		keys = append(keys, testMakeItem(i))
-		tr.ReplaceOrInsert(keys[len(keys)-1])
+		tr.Upsert(keys[len(keys)-1])
 	}
 	var exp []testKind
-	tr.Reverse(func(item testKind) bool {
+	tr.ReverseScan(func(item testKind) bool {
 		exp = append(exp, item)
 		return true
 	})
@@ -159,7 +159,7 @@ func TestGenericAscend(t *testing.T) {
 	var keys []testKind
 	for i := 0; i < 1000; i += 10 {
 		keys = append(keys, testMakeItem(i))
-		tr.ReplaceOrInsert(keys[len(keys)-1])
+		tr.Upsert(keys[len(keys)-1])
 		tr.sane()
 	}
 	exp := keys
@@ -198,7 +198,7 @@ func TestGenericItems(t *testing.T) {
 	var keys []testKind
 	for i := 0; i < 100000; i += 10 {
 		keys = append(keys, testMakeItem(i))
-		tr.ReplaceOrInsert(keys[len(keys)-1])
+		tr.Upsert(keys[len(keys)-1])
 		tr.sane()
 	}
 	keys2 := tr.Items()
@@ -218,7 +218,7 @@ func TestGenericSimpleRandom(t *testing.T) {
 			if v, ok := tr.Get(items[i]); ok || !tr.eq(v, tr.empty) {
 				panic("!")
 			}
-			if v, ok := tr.ReplaceOrInsert(items[i]); ok || !tr.eq(v, tr.empty) {
+			if v, ok := tr.Upsert(items[i]); ok || !tr.eq(v, tr.empty) {
 				panic("!")
 			}
 			if v, ok := tr.Get(items[i]); !ok || !tr.eq(v, items[i]) {
@@ -227,7 +227,7 @@ func TestGenericSimpleRandom(t *testing.T) {
 		}
 		tr.sane()
 		for i := 0; i < len(items); i++ {
-			if v, ok := tr.ReplaceOrInsert(items[i]); !ok || !tr.eq(v, items[i]) {
+			if v, ok := tr.Upsert(items[i]); !ok || !tr.eq(v, items[i]) {
 				panic("!")
 			}
 		}
@@ -289,7 +289,7 @@ func TestGenericBTree(t *testing.T) {
 
 	// insert all items
 	for _, key := range keys {
-		if v, ok := tr.ReplaceOrInsert(key); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.Upsert(key); ok || !tr.eq(v, tr.empty) {
 			t.Fatal("expected false")
 		}
 		tr.sane()
@@ -326,7 +326,7 @@ func TestGenericBTree(t *testing.T) {
 
 	// reverse all items
 	count = 0
-	tr.Reverse(func(item testKind) bool {
+	tr.ReverseScan(func(item testKind) bool {
 		if count > 0 {
 			if tr.gte(item, prev) {
 				t.Fatal("out of order")
@@ -360,7 +360,7 @@ func TestGenericBTree(t *testing.T) {
 	// reverse and quit at various steps
 	for i := 0; i < 100; i++ {
 		var j int
-		tr.Reverse(func(item testKind) bool {
+		tr.ReverseScan(func(item testKind) bool {
 			if j == i {
 				return false
 			}
@@ -412,7 +412,7 @@ func TestGenericBTree(t *testing.T) {
 
 	// replace second half
 	for _, key := range keys[len(keys)/2:] {
-		if v, ok := tr.ReplaceOrInsert(key); !ok || !tr.eq(v, key) {
+		if v, ok := tr.Upsert(key); !ok || !tr.eq(v, key) {
 			t.Fatalf("expected '%v', got '%v'", key, v)
 		}
 		tr.sane()
@@ -439,7 +439,7 @@ func TestGenericBTree(t *testing.T) {
 		t.Fatal("should not be reached")
 		return true
 	})
-	tr.Reverse(func(item testKind) bool {
+	tr.ReverseScan(func(item testKind) bool {
 		t.Fatal("should not be reached")
 		return true
 	})
@@ -451,11 +451,11 @@ func TestGenericBTree(t *testing.T) {
 
 func TestGenericBTreeOne(t *testing.T) {
 	tr := testNewBTree()
-	tr.ReplaceOrInsert(testMakeItem(1))
+	tr.Upsert(testMakeItem(1))
 	tr.Delete(testMakeItem(1))
-	tr.ReplaceOrInsert(testMakeItem(1))
+	tr.Upsert(testMakeItem(1))
 	tr.Delete(testMakeItem(1))
-	tr.ReplaceOrInsert(testMakeItem(1))
+	tr.Upsert(testMakeItem(1))
 	tr.Delete(testMakeItem(1))
 	if tr.Len() != 0 {
 		panic("!")
@@ -468,7 +468,7 @@ func TestGenericBTree256(t *testing.T) {
 	var n int
 	for j := 0; j < 2; j++ {
 		for _, i := range rand.Perm(256) {
-			tr.ReplaceOrInsert(testMakeItem(i))
+			tr.Upsert(testMakeItem(i))
 			n++
 			if tr.Len() != n {
 				t.Fatalf("expected 256, got %d", n)
@@ -519,10 +519,10 @@ func TestGenericRandom(t *testing.T) {
 	if v, ok := tr.Max(); ok || !tr.eq(v, tr.empty) {
 		t.Fatalf("expected nil")
 	}
-	if v, ok := tr.PopMin(); ok || !tr.eq(v, tr.empty) {
+	if v, ok := tr.DeleteMin(); ok || !tr.eq(v, tr.empty) {
 		t.Fatalf("expected nil")
 	}
-	if v, ok := tr.PopMax(); ok || !tr.eq(v, tr.empty) {
+	if v, ok := tr.DeleteMax(); ok || !tr.eq(v, tr.empty) {
 		t.Fatalf("expected nil")
 	}
 	if tr.Height() != 0 {
@@ -531,7 +531,7 @@ func TestGenericRandom(t *testing.T) {
 	tr.sane()
 	shuffleItems(keys)
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.ReplaceOrInsert(keys[i]); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.Upsert(keys[i]); ok || !tr.eq(v, tr.empty) {
 			t.Fatalf("expected nil")
 		}
 		if i%123 == 0 {
@@ -571,7 +571,7 @@ func TestGenericRandom(t *testing.T) {
 	}
 
 	n = 0
-	tr.Reverse(func(item testKind) bool {
+	tr.ReverseScan(func(item testKind) bool {
 		n++
 		return false
 	})
@@ -579,7 +579,7 @@ func TestGenericRandom(t *testing.T) {
 		t.Fatalf("expected 1, got %d", n)
 	}
 	n = 0
-	tr.Reverse(func(item testKind) bool {
+	tr.ReverseScan(func(item testKind) bool {
 		if !tr.eq(item, keys[len(keys)-n-1]) {
 			t.Fatalf("expected %v, got %v", keys[len(keys)-n-1], item)
 		}
@@ -613,7 +613,7 @@ func TestGenericRandom(t *testing.T) {
 	n = 0
 	for i := 0; i < 1000; i++ {
 		n = 0
-		tr.Reverse(func(item testKind) bool {
+		tr.ReverseScan(func(item testKind) bool {
 			if n == i {
 				return false
 			}
@@ -664,16 +664,16 @@ func TestGenericRandom(t *testing.T) {
 	if v, ok := tr.Max(); !ok || !tr.eq(v, keys[len(keys)-1]) {
 		t.Fatalf("expected '%v', got '%v'", keys[len(keys)-1], v)
 	}
-	if v, ok := tr.PopMin(); !ok || !tr.eq(v, keys[0]) {
+	if v, ok := tr.DeleteMin(); !ok || !tr.eq(v, keys[0]) {
 		t.Fatalf("expected '%v', got '%v'", keys[0], v)
 	}
 	tr.sane()
-	if v, ok := tr.PopMax(); !ok || !tr.eq(v, keys[len(keys)-1]) {
+	if v, ok := tr.DeleteMax(); !ok || !tr.eq(v, keys[len(keys)-1]) {
 		t.Fatalf("expected '%v', got '%v'", keys[len(keys)-1], v)
 	}
 	tr.sane()
-	tr.ReplaceOrInsert(keys[0])
-	tr.ReplaceOrInsert(keys[len(keys)-1])
+	tr.Upsert(keys[0])
+	tr.Upsert(keys[len(keys)-1])
 	shuffleItems(keys)
 	var hint PathHint
 	for i := 0; i < len(keys); i++ {
@@ -686,22 +686,22 @@ func TestGenericRandom(t *testing.T) {
 	}
 	sortItems(keys)
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.PopMin(); !ok || !tr.eq(v, keys[i]) {
+		if v, ok := tr.DeleteMin(); !ok || !tr.eq(v, keys[i]) {
 			t.Fatalf("expected '%v', got '%v'", keys[i], v)
 		}
 	}
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.ReplaceOrInsert(keys[i]); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.Upsert(keys[i]); ok || !tr.eq(v, tr.empty) {
 			t.Fatalf("expected nil")
 		}
 	}
 	for i := len(keys) - 1; i >= 0; i-- {
-		if v, ok := tr.PopMax(); !ok || !tr.eq(v, keys[i]) {
+		if v, ok := tr.DeleteMax(); !ok || !tr.eq(v, keys[i]) {
 			t.Fatalf("expected '%v', got '%v'", keys[i], v)
 		}
 	}
 	for i := 0; i < len(keys); i++ {
-		if v, ok := tr.ReplaceOrInsert(keys[i]); ok || !tr.eq(v, tr.empty) {
+		if v, ok := tr.Upsert(keys[i]); ok || !tr.eq(v, tr.empty) {
 			t.Fatalf("expected nil")
 		}
 	}
@@ -718,7 +718,7 @@ func TestGenericRandom(t *testing.T) {
 		t.Fatalf("expected '%v', got '%v'", tr.empty, v)
 	}
 	tr.sane()
-	tr.ReplaceOrInsert(keys[len(keys)/2])
+	tr.Upsert(keys[len(keys)/2])
 	tr.sane()
 	for i := 0; i < len(keys); i++ {
 		if v, ok := tr.Delete(keys[i]); !ok || !tr.eq(v, keys[i]) {
@@ -822,7 +822,7 @@ func TestGenericDeleteAt(t *testing.T) {
 	tr := testNewBTree()
 	keys := randKeys(N)
 	for _, key := range keys {
-		tr.ReplaceOrInsert(key)
+		tr.Upsert(key)
 	}
 	tr.sane()
 	for tr.Len() > 0 {
@@ -840,11 +840,11 @@ func TestGenericCopy(t *testing.T) {
 	items := randKeys(100000)
 	itemsM := testNewBTree()
 	for i := 0; i < len(items); i++ {
-		itemsM.ReplaceOrInsert(items[i])
+		itemsM.Upsert(items[i])
 	}
 	tr := testNewBTree()
 	for i := 0; i < len(items); i++ {
-		tr.ReplaceOrInsert(items[i])
+		tr.Upsert(items[i])
 	}
 	var wait atomic.Int32
 	var testCopyDeep func(tr *BTree[testKind], parent bool)
@@ -870,7 +870,7 @@ func TestGenericCopy(t *testing.T) {
 			items2[i] = x
 		}
 		for i := 0; i < len(items2); i++ {
-			if v, ok := tr.ReplaceOrInsert(items2[i]); ok || !tr.eq(v, tr.empty) {
+			if v, ok := tr.Upsert(items2[i]); ok || !tr.eq(v, tr.empty) {
 				panic("!")
 			}
 		}
@@ -907,12 +907,12 @@ func TestGenericCopy(t *testing.T) {
 		var i int
 		for len(items2) > 0 {
 			if i%2 == 0 {
-				if v, ok := tr.PopMin(); !ok || !tr.eq(v, items2[0]) {
+				if v, ok := tr.DeleteMin(); !ok || !tr.eq(v, items2[0]) {
 					panic("!")
 				}
 				items2 = items2[1:]
 			} else {
-				if v, ok := tr.PopMax(); !ok || !tr.eq(v, items2[len(items2)-1]) {
+				if v, ok := tr.DeleteMax(); !ok || !tr.eq(v, items2[len(items2)-1]) {
 					panic("!")
 				}
 				items2 = items2[:len(items2)-1]
@@ -1208,139 +1208,4 @@ func (tr *BTree[T]) saneorder() bool {
 		return true
 	})
 	return !bad && count == tr.count
-}
-
-func TestGenericIter(t *testing.T) {
-	N := 100_000
-	tr := testNewBTree()
-	var all []testKind
-	for i := 0; i < N; i++ {
-		tr.Load(testMakeItem(i))
-		all = append(all, testMakeItem(i))
-	}
-	var count int
-	var i int
-	iter := tr.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		if !tr.eq(all[i], iter.Item()) {
-			panic("!")
-		}
-		count++
-		i++
-	}
-	if count != N {
-		t.Fatalf("expected %v, got %v", N, count)
-	}
-	iter.Release()
-	count = 0
-	i = len(all) - 1
-	iter = tr.Iter()
-	for ok := iter.Last(); ok; ok = iter.Prev() {
-		if !tr.eq(all[i], iter.Item()) {
-			panic("!")
-		}
-		i--
-		count++
-	}
-	if count != N {
-		t.Fatalf("expected %v, got %v", N, count)
-	}
-	iter.Release()
-	i = 0
-	iter = tr.Iter()
-	for ok := iter.First(); ok; ok = iter.Next() {
-		if !tr.eq(all[i], iter.Item()) {
-			panic("!")
-		}
-		i++
-	}
-	i--
-	for ok := iter.Prev(); ok; ok = iter.Prev() {
-		i--
-		if !tr.eq(all[i], iter.Item()) {
-			panic("!")
-		}
-
-	}
-	if i != 0 {
-		panic("!")
-	}
-
-	i++
-	for ok := iter.Next(); ok; ok = iter.Next() {
-		if !tr.eq(all[i], iter.Item()) {
-			panic("!")
-		}
-		i++
-
-	}
-	if i != N {
-		panic("!")
-	}
-
-	i = 0
-	for ok := iter.First(); ok; ok = iter.Next() {
-		if !tr.eq(all[i], iter.Item()) {
-			panic("!")
-		}
-		if tr.eq(iter.Item(), testMakeItem(N/2)) {
-			for ok = iter.Prev(); ok; ok = iter.Prev() {
-				i--
-				if !tr.eq(all[i], iter.Item()) {
-					panic("!")
-				}
-			}
-			break
-		}
-		i++
-	}
-	iter.Release()
-}
-
-func TestGenericIterSeek(t *testing.T) {
-	tr := NewBTree[int]()
-	var all []int
-	for i := 0; i < 10000; i++ {
-		tr.ReplaceOrInsert(i * 2)
-		all = append(all, i)
-	}
-	_ = all
-	{
-		iter := tr.Iter()
-		var vals []int
-		for ok := iter.Seek(501); ok; ok = iter.Next() {
-			vals = append(vals, iter.Item())
-		}
-		iter.Release()
-		if vals[0] != 502 || vals[1] != 504 {
-			t.Errorf("expected 502, 504, got %v", vals)
-		}
-	}
-	{
-		iter := tr.Iter()
-		var vals []int
-		for ok := iter.Seek(501); ok; ok = iter.Prev() {
-			vals = append(vals, iter.Item())
-		}
-		iter.Release()
-		if vals[0] != 502 || vals[1] != 500 {
-			t.Errorf("expected 502, 500, got %v", vals)
-		}
-	}
-}
-
-func TestGenericIterSeekPrefix(t *testing.T) {
-	tr := NewBTree[int]()
-	count := 10_000
-	for i := 0; i < count; i++ {
-		tr.ReplaceOrInsert(i * 2)
-	}
-	for i := 0; i < count; i++ {
-		iter := tr.Iter()
-		ret := iter.Seek(i*2 - 1)
-		if ret != true {
-			t.Errorf("expected true, got %v", ret)
-		}
-		iter.Release()
-	}
 }
