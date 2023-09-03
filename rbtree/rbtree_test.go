@@ -216,6 +216,20 @@ func TestLLRB(t *testing.T) {
 			},
 			expectedOrder: []int{0, 1, 4},
 		},
+		"should be ordered properly after deleting 3 items": {
+			scenario: func(t *rbtree.LLRB[int]) {
+				t.Insert(1)
+				t.Insert(0)
+				t.Insert(0)
+				t.Insert(2)
+				t.Insert(4)
+				t.Insert(4)
+				t.Delete(2)
+				t.Delete(4)
+				t.Delete(0)
+			},
+			expectedOrder: []int{0, 1, 4},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -257,6 +271,18 @@ func TestLLRB_ReverseScan(t *testing.T) {
 				t.Insert(2)
 				t.Insert(4)
 				t.Delete(2)
+			},
+			expectedOrder: []int{4, 1, 0},
+		},
+		"should be ordered properly after deleting 2 items": {
+			scenario: func(t *rbtree.LLRB[int]) {
+				t.Insert(1)
+				t.Insert(1)
+				t.Insert(0)
+				t.Insert(2)
+				t.Insert(4)
+				t.Delete(2)
+				t.Delete(1)
 			},
 			expectedOrder: []int{4, 1, 0},
 		},
