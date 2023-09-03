@@ -2,18 +2,24 @@
 package priorityqueue
 
 import (
+	"cmp"
 	"container/heap"
 
 	"github.com/bongnv/go-container/algorithm"
 )
 
 // PriorityQueue represents a priority queue.
-type PriorityQueue[T comparable] struct {
+type PriorityQueue[T any] struct {
 	container heapContainer[T]
 }
 
-// New creates a new heap of T.
-func New[T comparable](less algorithm.LessFunc[T]) *PriorityQueue[T] {
+// New creates a new priority queue of T.
+func New[T cmp.Ordered]() *PriorityQueue[T] {
+	return NewFunc[T](cmp.Less[T])
+}
+
+// NewNewFunc creates a new priority queue of T using Less function.
+func NewFunc[T any](less algorithm.LessFunc[T]) *PriorityQueue[T] {
 	return &PriorityQueue[T]{
 		container: heapContainer[T]{
 			less: less,

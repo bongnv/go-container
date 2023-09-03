@@ -2,6 +2,7 @@
 package heap
 
 import (
+	"cmp"
 	"container/heap"
 
 	"github.com/bongnv/go-container/algorithm"
@@ -14,7 +15,12 @@ type Heap[T comparable] struct {
 }
 
 // New creates a new heap of T.
-func New[T comparable](less algorithm.LessFunc[T]) *Heap[T] {
+func New[T cmp.Ordered]() *Heap[T] {
+	return NewFunc[T](cmp.Less[T])
+}
+
+// NewFunc creates a new heap of T using less.
+func NewFunc[T comparable](less algorithm.LessFunc[T]) *Heap[T] {
 	return &Heap[T]{
 		nodeLookUp: map[T]*heapNode[T]{},
 		container: heapContainer[T]{
@@ -23,7 +29,7 @@ func New[T comparable](less algorithm.LessFunc[T]) *Heap[T] {
 	}
 }
 
-// Push pushes a value into the queue.
+// Push pushes a value into the heap.
 func (h *Heap[T]) Push(value T) {
 	newNode := &heapNode[T]{
 		value: value,
@@ -32,14 +38,14 @@ func (h *Heap[T]) Push(value T) {
 	heap.Push(&h.container, newNode)
 }
 
-// Pop pops a value from the queue.
+// Pop pops a value from the heap.
 func (h *Heap[T]) Pop() T {
 	val := heap.Pop(&h.container).(*heapNode[T]).value
 	delete(h.nodeLookUp, val)
 	return val
 }
 
-// Top returns the value at the top of the queue.
+// Top returns the value at the top of the heap.
 func (h *Heap[T]) Top() T {
 	return h.container.nodes[0].value
 }

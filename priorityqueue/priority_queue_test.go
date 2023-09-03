@@ -9,7 +9,7 @@ import (
 
 func TestPriorityQueue(t *testing.T) {
 	t.Run("min heap should work properly", func(t *testing.T) {
-		h := priorityqueue.New[int](cmp.Less)
+		h := priorityqueue.New[int]()
 		h.Push(1)
 		h.Push(2)
 		h.Push(3)
@@ -32,7 +32,7 @@ func TestPriorityQueue(t *testing.T) {
 	})
 
 	t.Run("max heap should work properly", func(t *testing.T) {
-		h := priorityqueue.New[int](greater)
+		h := priorityqueue.NewFunc[int](greater)
 		h.Push(1)
 		h.Push(2)
 		h.Push(3)
@@ -55,7 +55,7 @@ func TestPriorityQueue(t *testing.T) {
 	})
 
 	t.Run("heap should work fine with duplicates", func(t *testing.T) {
-		h := priorityqueue.New[int](cmp.Less)
+		h := priorityqueue.New[int]()
 		h.Push(1)
 		h.Push(2)
 		h.Push(3)
@@ -79,7 +79,7 @@ func TestPriorityQueue(t *testing.T) {
 	})
 
 	t.Run("heap should work with custom data structure", func(t *testing.T) {
-		h := priorityqueue.New[*Custom](func(x, y *Custom) bool {
+		h := priorityqueue.NewFunc[*Custom](func(x, y *Custom) bool {
 			return x.Value < y.Value
 		})
 
