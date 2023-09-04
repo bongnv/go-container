@@ -124,10 +124,10 @@ func (l *List[T]) move(e, at *Element[T]) {
 	e.next.prev = e
 }
 
-// Remove removes e from l if e is an element of list l.
+// Delete removes e from l if e is an element of list l.
 // It returns the element value e.Value.
 // The element must not be nil.
-func (l *List[T]) Remove(e *Element[T]) T {
+func (l *List[T]) Delete(e *Element[T]) T {
 	if e.list == l {
 		// if e.list == l, l must have been initialized when e was inserted
 		// in l or l == nil (e is a zero Element) and l.remove will crash
