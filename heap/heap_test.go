@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bongnv/go-container/heap"
+	"github.com/google/go-cmp/cmp"
 )
 
 type Custom struct {
@@ -13,9 +14,8 @@ type Custom struct {
 
 func TestHeap(t *testing.T) {
 	testCases := map[string]struct {
-		scenario         func(h *heap.Heap[*Custom])
-		expectedTopKey   int
-		expectedTopValue string
+		scenario     func(h *heap.Heap[*Custom])
+		expectedData *Custom
 	}{
 		"should maintain the heap properly": {
 			scenario: func(h *heap.Heap[*Custom]) {
@@ -23,20 +23,17 @@ func TestHeap(t *testing.T) {
 				h.Push(&Custom{1, "one"})
 				h.Push(&Custom{2, "two"})
 			},
-			expectedTopKey:   1,
-			expectedTopValue: "one",
+			expectedData: &Custom{1, "one"},
 		},
 		"should maintain the heap properly after updating": {
 			scenario: func(h *heap.Heap[*Custom]) {
-				one := &Custom{1, "one"}
 				h.Push(&Custom{3, "three"})
-				h.Push(one)
+				one := h.Push(&Custom{1, "one"})
 				h.Push(&Custom{2, "two"})
-				one.Key = 4
+				one.Value.Key = 4
 				h.Fix(one)
 			},
-			expectedTopKey:   2,
-			expectedTopValue: "two",
+			expectedData: &Custom{2, "two"},
 		},
 	}
 
@@ -47,13 +44,9 @@ func TestHeap(t *testing.T) {
 				return x.Key < y.Key
 			})
 			tc.scenario(h)
-			ret := h.Top()
-			if ret.Key != tc.expectedTopKey {
-				t.Errorf("expected key %v, but got: %v", tc.expectedTopKey, ret.Key)
-			}
-
-			if ret.Val != tc.expectedTopValue {
-				t.Errorf("expected value %v, but got: %v", tc.expectedTopValue, ret.Val)
+			ret := h.Top().Value
+			if diff := cmp.Diff(ret, tc.expectedData); diff != "" {
+				t.Errorf("Unexpected result, (+got|-wanted): %s", diff)
 			}
 		})
 	}
