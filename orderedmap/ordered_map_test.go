@@ -175,7 +175,11 @@ func TestOrderedMap_ReverseScan(t *testing.T) {
 func TestOrderedMap(t *testing.T) {
 	om := orderedmap.New[int, string]()
 	om.Set(1, "one")
-	om.Set(2, "two")
+	two, replaced := om.Set(2, "two")
+	if replaced || two != "two" {
+		t.Errorf("Set doesn't return values properly, replaced: %v, value: %v", replaced, two)
+	}
+
 	om.Set(3, "three")
 	frontKey, frontVal := om.Front()
 	if frontKey != 1 || frontVal != "one" {
