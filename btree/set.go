@@ -100,16 +100,16 @@ func (tr *Set[K]) Max() (K, bool) {
 	return key, ok
 }
 
-// PopMin removes the minimum item in tree and returns it.
+// DeleteMin removes the minimum item in tree and returns it.
 // Returns nil if the tree has no items.
-func (tr *Set[K]) PopMin() (K, bool) {
+func (tr *Set[K]) DeleteMin() (K, bool) {
 	key, _, ok := tr.base.PopMin()
 	return key, ok
 }
 
 // PopMax removes the maximum item in tree and returns it.
 // Returns nil if the tree has no items.
-func (tr *Set[K]) PopMax() (K, bool) {
+func (tr *Set[K]) DeleteMax() (K, bool) {
 	key, _, ok := tr.base.PopMax()
 	return key, ok
 }

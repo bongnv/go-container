@@ -60,8 +60,8 @@ func TestSet(t *testing.T) {
 	assert(t, tr.Len() == 0)
 	assert(t, dotup(tr.Min()) == nil)
 	assert(t, dotup(tr.Max()) == nil)
-	assert(t, dotup(tr.PopMin()) == nil)
-	assert(t, dotup(tr.PopMax()) == nil)
+	assert(t, dotup(tr.DeleteMin()) == nil)
+	assert(t, dotup(tr.DeleteMax()) == nil)
 	for i := 0; i < N; i++ {
 		assert(t, !tr.Has(i))
 	}
@@ -79,8 +79,8 @@ func TestSet(t *testing.T) {
 	assert(t, tr.Len() == N)
 	assert(t, dotup(tr.Min()) == 0)
 	assert(t, dotup(tr.Max()) == N-1)
-	assert(t, dotup(tr.PopMin()) == 0)
-	assert(t, dotup(tr.PopMax()) == N-1)
+	assert(t, dotup(tr.DeleteMin()) == 0)
+	assert(t, dotup(tr.DeleteMax()) == N-1)
 	tr.Insert(0)
 	tr.Insert(N - 1)
 	assert(t, dotup(tr.GetAt(0)) == 0)

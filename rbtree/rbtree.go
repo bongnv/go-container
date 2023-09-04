@@ -511,3 +511,13 @@ func (t *LLRB[T]) descend(h *Node[T], iterator ItemIterator[T]) bool {
 	}
 	return t.descend(h.Left, iterator)
 }
+
+// Values returns all values from the tree in order.
+func (t *LLRB[T]) Values() []T {
+	allValues := make([]T, 0, t.Len())
+	t.ascend(t.root, func(value T) bool {
+		allValues = append(allValues, value)
+		return true
+	})
+	return allValues
+}

@@ -1111,8 +1111,8 @@ func (tr *BTree[T]) unlock(write bool) {
 	}
 }
 
-// Items returns all the items in order.
-func (tr *BTree[T]) Items() []T {
+// Values returns all the items in order.
+func (tr *BTree[T]) Values() []T {
 	return tr.items(false)
 }
 

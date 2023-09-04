@@ -304,3 +304,57 @@ func TestLLRB_ReverseScan(t *testing.T) {
 		})
 	}
 }
+
+func TestLLRB_Values(t *testing.T) {
+	testCases := map[string]struct {
+		scenario       func(t *rbtree.LLRB[int])
+		expectedValues []int
+	}{
+		"should be ordered properly": {
+			scenario: func(t *rbtree.LLRB[int]) {
+				t.Insert(1)
+				t.Insert(0)
+				t.Insert(2)
+				t.Insert(2)
+				t.Insert(4)
+			},
+			expectedValues: []int{0, 1, 2, 2, 4},
+		},
+		"should be ordered properly after deleting": {
+			scenario: func(t *rbtree.LLRB[int]) {
+				t.Insert(1)
+				t.Insert(0)
+				t.Insert(2)
+				t.Insert(4)
+				t.Delete(2)
+			},
+			expectedValues: []int{0, 1, 4},
+		},
+		"should be ordered properly after deleting 3 items": {
+			scenario: func(t *rbtree.LLRB[int]) {
+				t.Insert(1)
+				t.Insert(0)
+				t.Insert(0)
+				t.Insert(2)
+				t.Insert(4)
+				t.Insert(4)
+				t.Delete(2)
+				t.Delete(4)
+				t.Delete(0)
+			},
+			expectedValues: []int{0, 1, 4},
+		},
+	}
+
+	for name, tc := range testCases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			rbt := rbtree.New[int]()
+			tc.scenario(rbt)
+			values := rbt.Values()
+			if diff := cmp.Diff(values, tc.expectedValues); diff != "" {
+				t.Errorf("unexpected order (+got, -wanted): %v", diff)
+			}
+		})
+	}
+}

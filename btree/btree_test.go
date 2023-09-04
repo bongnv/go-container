@@ -192,8 +192,8 @@ func TestGenericAscend(t *testing.T) {
 
 func TestGenericItems(t *testing.T) {
 	tr := testNewBTree()
-	if len(tr.Items()) != 0 {
-		t.Fatalf("expected 0, got %v", len(tr.Items()))
+	if len(tr.Values()) != 0 {
+		t.Fatalf("expected 0, got %v", len(tr.Values()))
 	}
 	var keys []testKind
 	for i := 0; i < 100000; i += 10 {
@@ -201,7 +201,7 @@ func TestGenericItems(t *testing.T) {
 		tr.Upsert(keys[len(keys)-1])
 		tr.sane()
 	}
-	keys2 := tr.Items()
+	keys2 := tr.Values()
 	if !kindsAreEqual(keys, keys2) {
 		t.Fatal("mismatch")
 	}
