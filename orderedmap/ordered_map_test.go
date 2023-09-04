@@ -176,7 +176,7 @@ func TestOrderedMap(t *testing.T) {
 	om := orderedmap.New[int, string]()
 	om.Set(1, "one")
 	two, replaced := om.Set(2, "two")
-	if replaced || two != "two" {
+	if replaced || two != "" {
 		t.Errorf("Set doesn't return values properly, replaced: %v, value: %v", replaced, two)
 	}
 

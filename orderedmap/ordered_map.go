@@ -50,7 +50,7 @@ func (om *OrderedMap[K, V]) Set(key K, value V) (oldVal V, replaced bool) {
 			Key:   key,
 			Value: value,
 		})
-		return om.nodeOf[key].Value.Value, false
+		return
 	}
 
 	oldVal = node.Value.Value
