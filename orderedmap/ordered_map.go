@@ -54,7 +54,7 @@ func (om *OrderedMap[K, V]) Set(key K, value V) (oldVal V, replaced bool) {
 	}
 
 	oldVal = node.Value.Value
-	om.values.Remove(node)
+	om.values.Delete(node)
 	om.nodeOf[key] = om.values.PushBack(Pair[K, V]{
 		Key:   key,
 		Value: value,
@@ -75,7 +75,7 @@ func (om *OrderedMap[K, V]) Delete(key K) (val V, present bool) {
 	}
 
 	val = node.Value.Value
-	om.values.Remove(node)
+	om.values.Delete(node)
 	delete(om.nodeOf, key)
 	return val, true
 }

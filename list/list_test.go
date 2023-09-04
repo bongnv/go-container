@@ -15,7 +15,7 @@ func TestList(t *testing.T) {
 		expectList(t, l, "a", "bong", "c")
 		toRemove := l.Back()
 		l.PushBack("d")
-		l.Remove(toRemove)
+		l.Delete(toRemove)
 		expectList(t, l, "a", "bong", "d")
 	})
 }
