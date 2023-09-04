@@ -50,6 +50,32 @@ func TestOrderedMap_Scan(t *testing.T) {
 				{2, "two"},
 			},
 		},
+		"should be able to MoveToFront correctly": {
+			scenario: func(om *orderedmap.OrderedMap[int, string]) {
+				om.Set(1, "one")
+				om.Set(2, "two")
+				om.Set(3, "three")
+				om.MoveToFront(2)
+			},
+			expectedPairs: []orderedmap.Pair[int, string]{
+				{2, "two"},
+				{1, "one"},
+				{3, "three"},
+			},
+		},
+		"should be able to MoveToBack correctly": {
+			scenario: func(om *orderedmap.OrderedMap[int, string]) {
+				om.Set(1, "one")
+				om.Set(2, "two")
+				om.Set(3, "three")
+				om.MoveToBack(2)
+			},
+			expectedPairs: []orderedmap.Pair[int, string]{
+				{1, "one"},
+				{3, "three"},
+				{2, "two"},
+			},
+		},
 		"should be able to Delete correctly": {
 			scenario: func(om *orderedmap.OrderedMap[int, string]) {
 				om.Set(1, "one")

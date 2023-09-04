@@ -110,6 +110,28 @@ func (om *OrderedMap[K, V]) MoveBefore(key, markedKey K) error {
 	return nil
 }
 
+// MoveToFront moves key to the front of list.
+func (om *OrderedMap[K, V]) MoveToFront(key K) error {
+	node, found := om.nodeOf[key]
+	if !found {
+		return ErrKeyNotFound
+	}
+
+	om.values.MoveToFront(node)
+	return nil
+}
+
+// MoveToBack moves key to the front of list.
+func (om *OrderedMap[K, V]) MoveToBack(key K) error {
+	node, found := om.nodeOf[key]
+	if !found {
+		return ErrKeyNotFound
+	}
+
+	om.values.MoveToBack(node)
+	return nil
+}
+
 // Front returns the pair of key and value at the front of the list.
 func (om *OrderedMap[K, V]) Front() (K, V) {
 	frontNode := om.values.Front()
