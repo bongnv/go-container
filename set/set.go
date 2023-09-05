@@ -41,3 +41,8 @@ func (s *Set[T]) Scan(itor func(val T) bool) {
 		}
 	}
 }
+
+// Empty returns whether the queue is empty or not.
+func (s *Set[T]) Empty() bool {
+	return s.Len() == 0
+}

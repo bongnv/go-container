@@ -41,3 +41,8 @@ func (s *Queue[T]) Front() T {
 func (s *Queue[T]) Back() T {
 	return s.container.Back().Value
 }
+
+// Empty returns whether the queue is empty or not.
+func (s *Queue[T]) Empty() bool {
+	return s.Len() == 0
+}

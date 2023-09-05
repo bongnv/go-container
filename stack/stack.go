@@ -36,3 +36,8 @@ func (s *Stack[T]) Pop() T {
 func (s *Stack[T]) Top() T {
 	return s.container.Back().Value
 }
+
+// Empty returns whether the stack is empty or not.
+func (s *Stack[T]) Empty() bool {
+	return s.Len() == 0
+}

@@ -48,6 +48,11 @@ func (h *PriorityQueue[T]) Len() int {
 	return len(h.container.nodes)
 }
 
+// Empty returns whether the queue is empty or not.
+func (s *PriorityQueue[T]) Empty() bool {
+	return s.Len() == 0
+}
+
 type heapContainer[T any] struct {
 	nodes []T
 	less  algorithm.LessFunc[T]
