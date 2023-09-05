@@ -2,17 +2,19 @@
 package stack
 
 import (
-	"container/list"
+	"github.com/bongnv/go-container/list"
 )
 
 // New creates a new stack.
 func New[T any]() *Stack[T] {
-	return &Stack[T]{}
+	return &Stack[T]{
+		container: list.New[T](),
+	}
 }
 
 // Stack is an implementation of stack.
 type Stack[T any] struct {
-	container list.List
+	container *list.List[T]
 }
 
 // Size returns the size of the stack.
@@ -27,10 +29,10 @@ func (s *Stack[T]) Push(value T) {
 
 // Pop pops a value from the queue.
 func (s *Stack[T]) Pop() T {
-	return s.container.Remove(s.container.Back()).(T)
+	return s.container.Delete(s.container.Back())
 }
 
 // Top returns the value at the top of the queue.
 func (s *Stack[T]) Top() T {
-	return s.container.Back().Value.(T)
+	return s.container.Back().Value
 }
